@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (C) Nicolas Lamirault <nicolas.lamirault@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo build output
+Cargo.lock.*
+
+# Test coverage reports
+coverage/
+*.profraw
+*.profdata
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment and temporary files
+.env
+.env.local
+*.tmp
+*.temp
