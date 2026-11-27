@@ -87,10 +87,15 @@ deny: ## Check the crates: advisories, licenses, bans and sources (deny.toml)
 	cargo deny check
 
 .PHONY: test
-test: build ## Run the Rust unit tests, then the Worker tests in Miniflare
+test: build ## Run the Rust unit tests (openapi.json check included), then the Worker tests in Miniflare
 	@echo -e "$(INFO)$(INFO_COLOR)[Test] Running tests$(NO_COLOR)"
 	cargo test
 	bun run test
+
+.PHONY: openapi
+openapi: ## Regenerate openapi.json from the #[utoipa::path] annotations
+	@echo -e "$(INFO)$(INFO_COLOR)[OpenAPI] Writing openapi.json$(NO_COLOR)"
+	TXAPELA_WRITE_OPENAPI=1 cargo test --lib api::openapi
 
 .PHONY: lint
 lint: ## Run the prek hooks on all files

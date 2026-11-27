@@ -6,6 +6,7 @@
 // *.test.mjs files, so that each binding is declared once.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { Miniflare } from "miniflare";
 import { experimental_readRawConfig as readRawConfig, unstable_splitSqlQuery as splitSqlQuery } from "wrangler";
@@ -35,7 +36,25 @@ export const allowedOrigins = (rawConfig.vars?.ALLOWED_ORIGINS ?? "")
 // The prefix of every problem type (src/api/problem.rs).
 export const PROBLEM = "https://txapela.pilotariak.com/problems/";
 
-export function startWorker() {
+// The organizer token of the tests: fictional, and never a real secret. The Worker gets its
+// SHA-256 in the ORGANIZER_TOKEN_SHA256 secret, computed here so that no hash is committed.
+export const ORGANIZER_TOKEN = "txapela-test-organizer-token";
+
+export function sha256Hex(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+// Starts the Worker. `bindings` adds or replaces bindings; a binding set to undefined is left
+// out, such as the secret in the tests of a Worker without it.
+export function startWorker({ bindings = {} } = {}) {
+  const env = Object.fromEntries(
+    Object.entries({
+      DB: { type: "d1", id: "DB" },
+      ORGANIZER_TOKEN_SHA256: { type: "text", value: sha256Hex(ORGANIZER_TOKEN) },
+      ...vars,
+      ...bindings,
+    }).filter(([, binding]) => binding !== undefined),
+  );
   return new Miniflare({
     workers: [
       {
@@ -55,10 +74,7 @@ export function startWorker() {
               },
             },
           },
-          env: {
-            DB: { type: "d1", id: "DB" },
-            ...vars,
-          },
+          env,
         },
       },
     ],
@@ -93,5 +109,70 @@ export async function applyMigrations(db) {
     if (statements.length > 0) {
       await db.batch(statements.map((statement) => db.prepare(statement)));
     }
+  }
+}
+
+// A Worker with a migrated D1, and a request helper for /api/v1. `token` goes in
+// `Authorization: Bearer`; `body` is sent as JSON unless it is a string.
+export async function startApi(options) {
+  const mf = startWorker(options);
+  const db = await mf.getD1Database("DB");
+  await applyMigrations(db);
+
+  function call(method, path, { token, body, headers = {} } = {}) {
+    const sent = { ...headers };
+    if (token !== undefined) sent.Authorization = `Bearer ${token}`;
+    if (body !== undefined) sent["Content-Type"] = "application/json";
+    return mf.dispatchFetch(`http://localhost/api/v1${path}`, {
+      method,
+      headers: sent,
+      body: body === undefined || typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
+  return { mf, db, call };
+}
+
+// A valid tournament at a fictional club and venue, with `changes` on top.
+export function tournamentBody(changes = {}) {
+  return {
+    slug: "open-de-printemps-2027",
+    name: "Open de printemps",
+    organizing_club: "Club Exemple de Pelote",
+    venue: {
+      name: "Trinquet de l'Exemple",
+      address: "1 place de l'Exemple, Ville-Exemple",
+      latitude: 43.0,
+      longitude: -1.0,
+    },
+    aire: "trinquet",
+    courts: [{ name: "Trinquet A" }, { name: "Trinquet B" }],
+    specialties: [{ specialty: "paleta_gomme_creuse", target_score: 40 }],
+    dates: {
+      registration_opens: "2027-03-01",
+      registration_closes: "2027-03-31",
+      first_match: "2027-04-10",
+      finals: "2027-06-19",
+    },
+    fee_cents: 2000,
+    max_teams: 16,
+    ...changes,
+  };
+}
+
+// Creates a tournament as the organizer, and returns its body.
+export async function createTournament(call, changes = {}) {
+  const res = await call("POST", "/tournaments", { token: ORGANIZER_TOKEN, body: tournamentBody(changes) });
+  assert.equal(res.status, 201, `tournament created: ${res.status}`);
+  return res.json();
+}
+
+// Moves a tournament one step at a time until it reaches `status`.
+export async function moveTo(call, slug, status) {
+  const steps = ["draft", "registration", "pools", "finals", "finished"];
+  for (const next of steps.slice(1, steps.indexOf(status) + 1)) {
+    const res = await call("PATCH", `/tournaments/${slug}`, { token: ORGANIZER_TOKEN, body: { status: next } });
+    assert.equal(res.status, 200, `${slug} moved to ${next}`);
+    await res.body?.cancel();
   }
 }

@@ -61,6 +61,8 @@ jobs:
         RUSTDOCFLAGS: -D warnings
       run: cargo doc --no-deps --document-private-items --target wasm32-unknown-unknown
 
+    # Includes the check that openapi.json is the document generated from the code
+    # (src/api/openapi.rs): run `make openapi` and commit the result when it fails.
     - name: Rust unit tests
       run: cargo test
 
@@ -101,6 +103,50 @@ jobs:
 
     - name: Worker tests
       run: bun run test
+
+  contract:
+    name: API contract (oasdiff breaking)
+    # Compares the contract of a pull request with the one of its base branch.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      with:
+        egress-policy: audit
+
+    - name: Checkout Code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # Only openapi.json of the base branch. Until the base branch has one, there is no contract
+    # to break, and the next step is skipped.
+    - name: Checkout the base contract
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.base_ref }}
+        path: base
+        sparse-checkout: openapi.json
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+
+    # Fails on an ERR-level change: a removed route, a new required field, a narrower type…
+    # Installed app versions keep calling /api/v1: a breaking change goes to /api/v2.
+    # `review: false` keeps the specs in CI (no upload to oasdiff.com), and an empty token posts
+    # no pull request comment.
+    - name: Breaking changes of /api/v1
+      if: hashFiles('base/openapi.json') != ''
+      uses: oasdiff/oasdiff-action/breaking@14ca7009a63c417dfe27b7c44359c4bcccaf8eee # v0.2.1
+      with:
+        base: base/openapi.json
+        revision: openapi.json
+        fail-on: ERR
+        review: "false"
+        github-token: ""
 
   deny:
     name: Dependencies (cargo-deny)

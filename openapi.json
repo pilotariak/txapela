@@ -1,0 +1,863 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "txapela",
+    "description": "Pelota tournaments run by a club. Paths are under /api/v1. Organizers write with a bearer token; reads are public, and a draft tournament is seen only with the organizer token. Errors are RFC 9457 problem details with a stable type. Dates are civil dates YYYY-MM-DD in Europe/Paris. Every API response sends Cache-Control: private, no-store.",
+    "contact": {
+      "name": "Nicolas Lamirault",
+      "email": "nicolas.lamirault@gmail.com"
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    },
+    "version": "1"
+  },
+  "servers": [
+    {
+      "url": "https://txapela.pilotariak.com"
+    }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Answers `{\"status\":\"ok\"}`. Needs no token.",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "txapela is up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/tournaments": {
+      "get": {
+        "tags": [
+          "tournaments"
+        ],
+        "summary": "List the tournaments, by first match date then slug. Drafts only with the organizer token.",
+        "operationId": "listTournaments",
+        "responses": {
+          "200": {
+            "description": "The tournaments; drafts only for an organizer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TournamentList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "tournaments"
+        ],
+        "summary": "Create a tournament, as a draft (organizer).",
+        "operationId": "createTournament",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTournament"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Tournament created as a draft",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "/api/v1/tournaments/{slug}"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tournament"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}": {
+      "get": {
+        "tags": [
+          "tournaments"
+        ],
+        "summary": "A tournament: 404 when no tournament has this slug, or when it is a draft and the caller has\nno organizer token.",
+        "operationId": "getTournament",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tournament",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tournament"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "tournaments"
+        ],
+        "summary": "Delete a draft tournament with its courts and specialties (organizer).",
+        "operationId": "deleteTournament",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Tournament deleted, with its courts and specialties"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "tournaments"
+        ],
+        "summary": "Change a tournament (organizer): a partial body, checked on the merged state with the rules of\ncreation. Aire, specialties, points, ranking and courts change only in draft. `status` moves\none step forward.",
+        "operationId": "updateTournament",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TournamentChanges"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The tournament after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tournament"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Aire": {
+        "type": "string",
+        "description": "Where the tournament is played: `tournaments.aire`.",
+        "enum": [
+          "fronton",
+          "mur_a_gauche",
+          "trinquet"
+        ]
+      },
+      "Court": {
+        "type": "object",
+        "description": "A named court of the venue, such as `Trinquet A`, used by the calendar.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Trimmed, not empty, unique within the tournament.",
+            "example": "Trinquet A"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateTournament": {
+        "type": "object",
+        "description": "`POST /tournaments`. A new tournament is a draft.",
+        "required": [
+          "slug",
+          "name",
+          "organizing_club",
+          "venue",
+          "aire",
+          "courts",
+          "specialties",
+          "dates",
+          "fee_cents",
+          "max_teams"
+        ],
+        "properties": {
+          "aire": {
+            "$ref": "#/components/schemas/Aire"
+          },
+          "courts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Court"
+            },
+            "description": "At least one.",
+            "minItems": 1
+          },
+          "dates": {
+            "$ref": "#/components/schemas/Dates"
+          },
+          "fee_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fee per team in euro cents, shown only.",
+            "minimum": 0
+          },
+          "max_teams": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 2
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizing_club": {
+            "type": "string"
+          },
+          "points": {
+            "$ref": "#/components/schemas/PointsChanges",
+            "description": "Default: 3 for a win, 1 for a loss, 0 for a forfeit."
+          },
+          "ranking": {
+            "$ref": "#/components/schemas/Ranking",
+            "description": "Default `points_then_goal_average`."
+          },
+          "slug": {
+            "type": "string",
+            "description": "3 to 64 characters among a-z, 0-9 and single hyphens, starting and ending with a letter\nor a digit. Immutable.",
+            "example": "open-de-printemps-2027",
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "specialties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpecialtyTarget"
+            },
+            "description": "At least one, none twice.",
+            "minItems": 1
+          },
+          "venue": {
+            "$ref": "#/components/schemas/Venue"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Dates": {
+        "type": "object",
+        "description": "The dates of the tournament, `YYYY-MM-DD` in Europe/Paris: registration opens <=\nregistration closes <= first match <= finals.",
+        "required": [
+          "registration_opens",
+          "registration_closes",
+          "first_match",
+          "finals"
+        ],
+        "properties": {
+          "finals": {
+            "type": "string",
+            "format": "date",
+            "example": "2027-06-19"
+          },
+          "first_match": {
+            "type": "string",
+            "format": "date",
+            "example": "2027-04-10"
+          },
+          "registration_closes": {
+            "type": "string",
+            "format": "date",
+            "example": "2027-03-31"
+          },
+          "registration_opens": {
+            "type": "string",
+            "format": "date",
+            "example": "2027-03-01"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DatesChanges": {
+        "type": "object",
+        "description": "The dates in a `PATCH`: an absent date keeps the stored one, and the four dates must stay in\norder.",
+        "properties": {
+          "finals": {
+            "type": "string",
+            "format": "date"
+          },
+          "first_match": {
+            "type": "string",
+            "format": "date"
+          },
+          "registration_closes": {
+            "type": "string",
+            "format": "date"
+          },
+          "registration_opens": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Health": {
+        "type": "object",
+        "description": "Liveness of txapela.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          }
+        }
+      },
+      "Points": {
+        "type": "object",
+        "description": "Points of a match in the pool ranking: win > loss >= forfeit >= 0.",
+        "required": [
+          "win",
+          "loss",
+          "forfeit"
+        ],
+        "properties": {
+          "forfeit": {
+            "type": "integer",
+            "format": "int64",
+            "example": 0,
+            "minimum": 0
+          },
+          "loss": {
+            "type": "integer",
+            "format": "int64",
+            "example": 1,
+            "minimum": 0
+          },
+          "win": {
+            "type": "integer",
+            "format": "int64",
+            "example": 3,
+            "minimum": 0
+          }
+        }
+      },
+      "PointsChanges": {
+        "type": "object",
+        "description": "Points in a request. At creation, an absent value takes its default: 3 for a win, 1 for a\nloss, 0 for a forfeit. In a `PATCH`, it keeps the stored value.",
+        "properties": {
+          "forfeit": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "loss": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "win": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProblemDocument": {
+        "type": "object",
+        "description": "The body of an error response.",
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ProblemType"
+          }
+        }
+      },
+      "ProblemType": {
+        "type": "string",
+        "description": "The `type` of a problem: one per error, stable across versions.",
+        "enum": [
+          "https://txapela.pilotariak.com/problems/unauthorized",
+          "https://txapela.pilotariak.com/problems/not-found",
+          "https://txapela.pilotariak.com/problems/method-not-allowed",
+          "https://txapela.pilotariak.com/problems/slug-taken",
+          "https://txapela.pilotariak.com/problems/not-a-draft",
+          "https://txapela.pilotariak.com/problems/invalid-transition",
+          "https://txapela.pilotariak.com/problems/invalid-request",
+          "https://txapela.pilotariak.com/problems/internal"
+        ]
+      },
+      "Ranking": {
+        "type": "string",
+        "description": "How pool teams are ranked: `tournaments.ranking`.",
+        "enum": [
+          "points_then_goal_average"
+        ]
+      },
+      "Specialty": {
+        "type": "string",
+        "description": "A specialty played in the tournament: `tournament_specialties.specialty`. The order of the\nvariants is the order of a tournament's specialties.",
+        "enum": [
+          "paleta_gomme_creuse",
+          "paleta_gomme_pleine"
+        ]
+      },
+      "SpecialtyTarget": {
+        "type": "object",
+        "description": "A specialty of the tournament and the score a team must reach to win a match of it.",
+        "required": [
+          "specialty",
+          "target_score"
+        ],
+        "properties": {
+          "specialty": {
+            "$ref": "#/components/schemas/Specialty"
+          },
+          "target_score": {
+            "type": "integer",
+            "format": "int64",
+            "example": 40,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "Status": {
+        "type": "string",
+        "description": "`tournaments.status`. A new tournament is a draft.",
+        "enum": [
+          "draft",
+          "registration",
+          "pools",
+          "finals",
+          "finished"
+        ]
+      },
+      "Tournament": {
+        "type": "object",
+        "description": "A tournament.",
+        "required": [
+          "slug",
+          "name",
+          "organizing_club",
+          "venue",
+          "aire",
+          "courts",
+          "specialties",
+          "points",
+          "ranking",
+          "dates",
+          "fee_cents",
+          "max_teams",
+          "status"
+        ],
+        "properties": {
+          "aire": {
+            "$ref": "#/components/schemas/Aire"
+          },
+          "courts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Court"
+            },
+            "description": "In the organizer's order."
+          },
+          "dates": {
+            "$ref": "#/components/schemas/Dates"
+          },
+          "fee_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fee per team in euro cents, shown only: payment is out of scope.",
+            "example": 2000,
+            "minimum": 0
+          },
+          "max_teams": {
+            "type": "integer",
+            "format": "int64",
+            "example": 16,
+            "minimum": 2
+          },
+          "name": {
+            "type": "string",
+            "example": "Open de printemps"
+          },
+          "organizing_club": {
+            "type": "string",
+            "description": "Free text.",
+            "example": "Club Exemple de Pelote"
+          },
+          "points": {
+            "$ref": "#/components/schemas/Points"
+          },
+          "ranking": {
+            "$ref": "#/components/schemas/Ranking"
+          },
+          "slug": {
+            "type": "string",
+            "description": "The public key, chosen at creation and immutable.",
+            "example": "open-de-printemps-2027"
+          },
+          "specialties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpecialtyTarget"
+            },
+            "description": "In a fixed order: `paleta_gomme_creuse`, then `paleta_gomme_pleine`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "venue": {
+            "$ref": "#/components/schemas/Venue"
+          }
+        }
+      },
+      "TournamentChanges": {
+        "type": "object",
+        "description": "`PATCH /tournaments/:slug`: absent fields keep their value, and no field takes `null`. The\nslug never changes. Aire, specialties, points, ranking and courts change only while the\ntournament is a draft.",
+        "properties": {
+          "aire": {
+            "$ref": "#/components/schemas/Aire",
+            "description": "Draft only."
+          },
+          "courts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Court"
+            },
+            "description": "Draft only. Replaces the courts.",
+            "minItems": 1
+          },
+          "dates": {
+            "$ref": "#/components/schemas/DatesChanges"
+          },
+          "fee_cents": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_teams": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 2
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizing_club": {
+            "type": "string"
+          },
+          "points": {
+            "$ref": "#/components/schemas/PointsChanges",
+            "description": "Draft only. Absent values keep the stored ones."
+          },
+          "ranking": {
+            "$ref": "#/components/schemas/Ranking",
+            "description": "Draft only."
+          },
+          "specialties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpecialtyTarget"
+            },
+            "description": "Draft only. Replaces the specialties and their target scores.",
+            "minItems": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status",
+            "description": "One step forward only: draft → registration → pools → finals → finished."
+          },
+          "venue": {
+            "$ref": "#/components/schemas/VenueChanges"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TournamentList": {
+        "type": "object",
+        "description": "`GET /tournaments`.",
+        "required": [
+          "tournaments"
+        ],
+        "properties": {
+          "tournaments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tournament"
+            },
+            "description": "By first match date, then slug."
+          }
+        }
+      },
+      "Venue": {
+        "type": "object",
+        "description": "Where the tournament is played.",
+        "required": [
+          "name",
+          "address",
+          "latitude",
+          "longitude"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "1 place de l'Exemple, Ville-Exemple"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "example": 43.0,
+            "maximum": 90,
+            "minimum": -90
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "example": -1.0,
+            "maximum": 180,
+            "minimum": -180
+          },
+          "name": {
+            "type": "string",
+            "example": "Trinquet de l'Exemple"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VenueChanges": {
+        "type": "object",
+        "description": "The venue in a `PATCH`: an absent value keeps the stored one.",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "maximum": 90,
+            "minimum": -90
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "maximum": 180,
+            "minimum": -180
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "responses": {
+      "Conflict": {
+        "description": "Slug taken, not a draft, or a status change other than one step forward.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDocument"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No tournament with this slug, or a draft and no organizer token: both answer the same.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDocument"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "No organizer token, a malformed or wrong one, or no secret to check it against.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            },
+            "description": "Bearer"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDocument"
+            }
+          }
+        }
+      },
+      "Unprocessable": {
+        "description": "The body is not JSON, has an unknown or `null` field, or breaks a rule: the `detail`\nnames it.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDocument"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Organizer token, compared by its SHA-256 with a Worker secret. Required to write; on reads, it shows drafts too."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Liveness"
+    },
+    {
+      "name": "tournaments",
+      "description": "Create, read, change and delete tournaments"
+    }
+  ]
+}
