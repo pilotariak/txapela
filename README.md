@@ -38,8 +38,8 @@ Requires [rustup](https://rustup.rs), [Node.js](https://nodejs.org) ≥ 22.12 an
 ```sh
 make install         # Rust toolchain, worker-build, cargo-deny, JavaScript dependencies
 make migrate-local   # apply the D1 migrations to the local database
-make dev             # wrangler dev on http://localhost:8787
-curl http://localhost:8787/api/v1/health
+make dev             # wrangler dev on http://localhost:8793
+curl http://localhost:8793/api/v1/health
 ```
 
 Then check and test:

@@ -8,6 +8,10 @@ compatibility_date = "2026-11-13"
 [build]
 command = "cargo install -q --locked worker-build@0.9.0 && worker-build --release"
 
+[dev]
+port = 8793
+inspector_port = 9244
+
 [vars]
 ALLOWED_ORIGINS = "https://kancha.pilotariak.com"
 

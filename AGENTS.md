@@ -146,12 +146,15 @@ make install         # rustup toolchain install, cargo install worker-build and 
 
 ```bash
 make migrate-local   # bun run migrate:local: apply the migrations to the local D1
-make dev             # bun run dev: wrangler dev, ALLOWED_ORIGINS=http://localhost:8081  →  http://localhost:8787
+make dev             # bun run dev: wrangler dev, ALLOWED_ORIGINS=http://localhost:8081  →  http://localhost:8793
 ```
 
 ```bash
-curl http://localhost:8787/api/v1/health
+curl http://localhost:8793/api/v1/health
 ```
+
+`wrangler.toml` pins the HTTP port to 8793 and the inspector port to 9244, so txapela runs beside the other Pilotariak
+services. When a port is taken, `make dev` stops instead of moving to another one.
 
 ## Database
 
