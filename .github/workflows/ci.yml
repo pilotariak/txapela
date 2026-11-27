@@ -1,0 +1,134 @@
+# SPDX-FileCopyrightText: Copyright (C) Nicolas Lamirault <nicolas.lamirault@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+# ---
+# # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Project / CI
+
+on: # yamllint disable-line rule:truthy
+  pull_request:
+    branches:
+    - main
+  push:
+    branches:
+    - main
+
+# Deny all permissions at workflow level
+permissions: {}
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      with:
+        egress-policy: audit
+
+    - name: Checkout Code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # Installs the channel, components and wasm32 target pinned in rust-toolchain.toml.
+    - name: Install Rust toolchain
+      run: rustup toolchain install
+
+    # After the toolchain: the cache key includes the rustc version. The cache also holds
+    # ~/.cargo/bin, so the worker-build install below does nothing on a cache hit. Pull
+    # requests read the cache of main and do not save their own.
+    - name: Rust cache
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    - name: Check formatting
+      run: cargo fmt --check
+
+    - name: Clippy
+      run: cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
+
+    # Same command as `make doc`. Every item of the crate is private or pub(crate), so
+    # --document-private-items is what makes rustdoc check the doc comments and their links.
+    - name: Documentation
+      env:
+        RUSTDOCFLAGS: -D warnings
+      run: cargo doc --no-deps --document-private-items --target wasm32-unknown-unknown
+
+    - name: Rust unit tests
+      run: cargo test
+
+    # Same version as the wrangler.toml build command and the Makefile.
+    - name: Install worker-build
+      run: cargo install --locked worker-build@0.9.0
+
+    - name: Build Worker
+      run: worker-build --release
+
+    # wrangler and the Worker tests (node --test) run on Node.js.
+    - name: Setup Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 26
+
+    # Installs the bun version of the packageManager field of package.json.
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version-file: package.json
+
+    - name: Install dependencies
+      run: bun install --frozen-lockfile
+
+    # wrangler bundles its own miniflare: the pinned one must be the same version.
+    - name: Check miniflare matches wrangler
+      run: |
+        expected="$(jq -r '.dependencies.miniflare' node_modules/wrangler/package.json)"
+        actual="$(jq -r '.devDependencies.miniflare' package.json)"
+        if [ "${expected}" != "${actual}" ]; then
+          echo "::error file=package.json::miniflare ${actual} differs from the miniflare ${expected} wrangler depends on"
+          exit 1
+        fi
+
+    - name: Apply D1 migrations locally
+      run: bun run migrate:local
+
+    - name: Worker tests
+      run: bun run test
+
+  deny:
+    name: Dependencies (cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      with:
+        egress-policy: audit
+
+    - name: Checkout Code
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # cargo-deny runs `cargo metadata`, which needs the toolchain of rust-toolchain.toml.
+    - name: Install Rust toolchain
+      run: rustup toolchain install
+
+    # Prebuilt release binary, checksum verified. Same version as the Makefile.
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+      with:
+        tool: cargo-deny@0.22.0
+
+    # Advisories (RustSec), licenses, bans and sources, configured in deny.toml.
+    - name: cargo deny
+      run: cargo deny check

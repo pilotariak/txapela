@@ -5,27 +5,22 @@
 name = "txapela"
 version = "0.1.0"
 authors = ["Nicolas Lamirault <nicolas.lamirault@gmail.com>"]
-autobenches = false
 edition = "2024"
-rust-version = "1.85"
+description = "Pelota tournaments run by a club: a Cloudflare Worker in Rust with a D1 database"
 license = "Apache-2.0"
-description = "A Pilotariak service/application"
 repository = "https://github.com/pilotariak/txapela"
 publish = false
 
-[[bin]]
-name = "txapela"
-path = "src/main.rs"
-bench = false
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
-# Add your runtime dependencies here
+serde = { version = "1.0.229", features = ["derive"] }
+worker = { version = "0.9.0", features = ["d1"] }
 
-[dev-dependencies]
-# Add your development and testing dependencies here
+# `make check` runs clippy with -D warnings, so these warnings fail the build.
+[lints.rust]
+unsafe_code = "forbid"
 
-[profile.release]
-opt-level = 3     # Maximum optimization
-lto = true        # Link-time optimization
-codegen-units = 1 # Better optimization, slower build
-strip = true      # Strip debug symbols
+[lints.clippy]
+pedantic = "warn"

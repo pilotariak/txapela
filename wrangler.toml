@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (C) Nicolas Lamirault <nicolas.lamirault@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+name = "txapela"
+main = "build/index.js"
+compatibility_date = "2026-11-13"
+
+[build]
+command = "cargo install -q --locked worker-build@0.9.0 && worker-build --release"
+
+[vars]
+ALLOWED_ORIGINS = "https://kancha.pilotariak.com"
+
+[[routes]]
+pattern = "txapela.pilotariak.com"
+custom_domain = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pilotariak-txapela"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "database/migrations"
+
+[observability.logs]
+enabled = true
+invocation_logs = true

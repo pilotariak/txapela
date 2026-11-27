@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: Copyright (C) Nicolas Lamirault <nicolas.lamirault@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+# cargo-deny configuration: `make deny` and the CI run `cargo deny check`.
+# Reference: https://embarkstudios.github.io/cargo-deny/checks/cfg.html
+
+[graph]
+# The Worker runs on wasm32-unknown-unknown, and `cargo test` runs on the host: check the
+# dependencies of every target.
+all-features = true
+
+[advisories]
+# RustSec advisory database, with the cargo-deny defaults: a vulnerability fails, an unmaintained
+# or unsound advisory fails for a direct dependency, a yanked crate warns.
+# To accept an advisory, add its id with a reason: { id = "RUSTSEC-0000-0000", reason = "..." }.
+ignore = []
+
+[licenses]
+# Licenses compatible with Apache-2.0, the license of txapela. Add one only when a crate needs it.
+allow = [
+  "Apache-2.0",
+  # matchit (router of the worker crate): MIT AND BSD-3-Clause.
+  "BSD-3-Clause",
+  "MIT",
+  # unicode-ident and the icu_* crates of idna (url).
+  "Unicode-3.0",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+# txapela is not published (`publish = false`): its own license is not checked.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+# Crates come from crates.io only: no other registry and no git dependency.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

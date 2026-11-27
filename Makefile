@@ -5,127 +5,134 @@ BANNER = T X A P E L A
 
 SHELL = /bin/bash -o pipefail
 
+DIR = $(shell pwd)
+
+# Colors for terminal output
+NO_COLOR=\033[0m
+OK_COLOR=\033[32;01m
+ERROR_COLOR=\033[31;01m
+WARN_COLOR=\033[33;01m
+INFO_COLOR=\033[36m
+WHITE_COLOR=\033[1m
+MAKE_COLOR=\033[33;01m%-20s\033[0m
+
 .DEFAULT_GOAL := help
+
+# Define common messages
+OK=[🟢]
+KO=[🔴]
+WARN=[🟠]
+INFO=[🔵]
+
 
 .PHONY: help
 help: ## Display this help
-	@echo -e "\033[32;01m      $(BANNER)\033[0m"
+	@echo -e "$(OK_COLOR)      P I L O T A R I A K  /  $(BANNER)$(NO_COLOR)"
 	@echo "------------------------------------------------------------------"
-	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo ""
+	@awk 'BEGIN {FS = ":.*##"; printf "Usage: make ${INFO_COLOR}<target>${NO_COLOR}\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  ${INFO_COLOR}%-25s${NO_COLOR} %s\n", $$1, $$2 } /^##@/ { printf "\n${WHITE_COLOR}%s${NO_COLOR}\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo ""
 
 guard-%:
 	@if [ "${${*}}" = "" ]; then \
-		echo "Environment variable $* not set"; \
+		echo -e "$(ERROR_COLOR)Environment variable $* not set$(NO_COLOR)"; \
 		exit 1; \
 	fi
 
 check-%:
-	@if command -v $* > /dev/null 2>&1; then echo "🟢 $*"; else echo "🔴 $*"; fi
+	@if $$(hash $* 2> /dev/null); then \
+		echo -e "$(OK_COLOR)$(OK)$(NO_COLOR) $*"; \
+	else \
+		echo -e "$(ERROR_COLOR)$(KO)$(NO_COLOR) $*"; \
+	fi
+
+# Keep these pins in step with Cargo.toml, wrangler.toml and .github/workflows/ci.yml.
+WORKER_BUILD_VERSION = 0.9.0
+CARGO_DENY_VERSION = 0.22.0
 
 ##@ Development
 
-.PHONY: check
-check: ## Run cargo check
-	cargo check --all-features --all-targets
+.PHONY: install
+install: ## Install the Rust toolchain, worker-build, cargo-deny and the bun dependencies
+	@echo -e "$(INFO)$(INFO_COLOR)[Install] Installing dependencies$(NO_COLOR)"
+	rustup toolchain install
+	cargo install --locked worker-build@$(WORKER_BUILD_VERSION)
+	cargo install --locked cargo-deny@$(CARGO_DENY_VERSION)
+	bun install
 
 .PHONY: build
-build: ## Build the project
-	cargo build
+build: ## Build the Worker into build/ (worker-build)
+	@echo -e "$(INFO)$(INFO_COLOR)[Build] Building the Worker$(NO_COLOR)"
+	worker-build --release
 
-.PHONY: build-release
-build-release: ## Build the project in release mode
-	cargo build --release
+.PHONY: dev
+dev: ## Start local dev server (wrangler dev)
+	@echo -e "$(INFO)$(INFO_COLOR)[Dev] Starting Cloudflare Worker$(NO_COLOR)"
+	bun run dev
 
-.PHONY: run
-run: ## Run the project
-	cargo run
+.PHONY: check
+check: ## Check formatting and run clippy
+	@echo -e "$(INFO)$(INFO_COLOR)[Check] cargo fmt and clippy$(NO_COLOR)"
+	cargo fmt --check
+	cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
 
-.PHONY: watch
-watch: ## Watch for changes and rebuild
-	cargo watch -x check -x test -x run
+.PHONY: doc
+doc: ## Build the documentation, private items included, and fail on any rustdoc warning
+	@echo -e "$(INFO)$(INFO_COLOR)[Doc] cargo doc$(NO_COLOR)"
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --target wasm32-unknown-unknown
 
-##@ Testing
+.PHONY: deny
+deny: ## Check the crates: advisories, licenses, bans and sources (deny.toml)
+	@echo -e "$(INFO)$(INFO_COLOR)[Deny] cargo deny check$(NO_COLOR)"
+	cargo deny check
 
 .PHONY: test
-test: ## Run tests
-	cargo test --all-features
-
-.PHONY: test-verbose
-test-verbose: ## Run tests with verbose output
-	cargo test --all-features -- --nocapture
-
-.PHONY: test-coverage
-test-coverage: ## Run tests with coverage (requires cargo-tarpaulin)
-	cargo tarpaulin --all-features --out Html --output-dir coverage
-
-##@ Quality
-
-.PHONY: fmt
-fmt: ## Format code
-	cargo fmt --all
-
-.PHONY: fmt-check
-fmt-check: ## Check code formatting
-	cargo fmt --all -- --check
-
-.PHONY: clippy
-clippy: ## Run clippy linter
-	cargo clippy --all-features --all-targets -- -D warnings
-
-.PHONY: audit
-audit: ## Run security audit
-	cargo audit
-
-.PHONY: outdated
-outdated: ## Check for outdated dependencies
-	cargo outdated
+test: build ## Run the Rust unit tests, then the Worker tests in Miniflare
+	@echo -e "$(INFO)$(INFO_COLOR)[Test] Running tests$(NO_COLOR)"
+	cargo test
+	bun run test
 
 .PHONY: lint
 lint: ## Run the prek hooks on all files
-	prek run -a
+	@echo -e "$(INFO)$(INFO_COLOR)[Lint] Running prek hooks $(NO_COLOR)"
+	@prek run -a
 
-.PHONY: rust-lint
-rust-lint: fmt-check clippy audit ## Run all Rust linters
+##@ Database
 
-##@ Documentation
+.PHONY: migrate-local
+migrate-local: ## Apply the D1 migrations to the local database
+	@echo -e "$(INFO)$(INFO_COLOR)[DB] Applying migrations locally$(NO_COLOR)"
+	bun run migrate:local
 
-.PHONY: doc
-doc: ## Generate documentation
-	cargo doc --no-deps --all-features
+.PHONY: migrate-remote
+migrate-remote: ## Apply the D1 migrations to the remote database
+	@echo -e "$(INFO)$(INFO_COLOR)[DB] Applying migrations remotely$(NO_COLOR)"
+	bun run migrate:remote
 
-.PHONY: doc-open
-doc-open: ## Generate and open documentation
-	cargo doc --no-deps --all-features --open
+.PHONY: migrate-list
+migrate-list: ## List applied and pending migrations of the local database
+	@echo -e "$(INFO)$(INFO_COLOR)[DB] Listing local migrations$(NO_COLOR)"
+	bun run migrate:list
+
+.PHONY: db-local
+db-local: guard-SQL ## Run SQL on the local database: make db-local SQL="SELECT ..."
+	bun run db:local -- "$(SQL)"
+
+.PHONY: db-remote
+db-remote: guard-SQL ## Run SQL on the remote database: make db-remote SQL="SELECT ..."
+	bun run db:remote -- "$(SQL)"
+
+##@ Deployment
+
+.PHONY: deploy
+deploy: migrate-remote ## Apply the D1 migrations remotely, then deploy the Worker
+	@echo -e "$(INFO)$(INFO_COLOR)[Deploy] Deploying to production$(NO_COLOR)"
+	bun run deploy
 
 ##@ Maintenance
 
 .PHONY: clean
-clean: ## Clean build artifacts
+clean: ## Clean project
+	@echo -e "$(INFO)$(INFO_COLOR)[Clean] Processing $(NO_COLOR)"
 	cargo clean
-
-.PHONY: update
-update: ## Update dependencies
-	cargo update
-
-.PHONY: install-tools
-install-tools: ## Install development tools
-	rustup component add rustfmt clippy
-	cargo install cargo-audit cargo-outdated cargo-watch cargo-tarpaulin
-
-.PHONY: pre-commit
-pre-commit: rust-lint test ## Run pre-commit checks
-	@echo "All pre-commit checks passed!"
-
-##@ Docker
-
-.PHONY: docker-build
-docker-build: ## Build Docker image
-	docker build -t txapela:latest .
-
-.PHONY: docker-run
-docker-run: ## Run Docker container
-	docker run --rm -it txapela:latest
-
-.PHONY: docker-shell
-docker-shell: ## Open shell in Docker container
-	docker run --rm -it txapela:latest /bin/sh
+	rm -rf build node_modules .wrangler
