@@ -9,6 +9,8 @@
 use serde::Deserialize;
 use worker::{D1Database, D1PreparedStatement, Result};
 
+use worker::wasm_bindgen::JsValue;
+
 use super::{Selection, int, optional_text, statement, text};
 use crate::domain::player::Player;
 use crate::domain::slug::Slug;
@@ -35,6 +37,42 @@ impl From<Row> for Player {
             contact: row.contact,
         }
     }
+}
+
+/// The public fields of a player, and the number of its team: no licence, no contact.
+#[derive(Deserialize)]
+pub(crate) struct PublicRow {
+    pub(crate) number: i64,
+    first_name: String,
+    last_name: String,
+    club: Option<String>,
+}
+
+impl From<PublicRow> for Player {
+    fn from(row: PublicRow) -> Self {
+        Self {
+            first_name: row.first_name,
+            last_name: row.last_name,
+            club: row.club,
+            licence: None,
+            contact: None,
+        }
+    }
+}
+
+/// The public fields of the players of the teams in the pools of a series (`keys`: the slugs of
+/// the tournament and the series), by team number then position. The pools, matches and
+/// standings show these only, so they never read a licence or a contact.
+pub(crate) fn select_in_pools(db: &D1Database, keys: &[JsValue]) -> Result<D1PreparedStatement> {
+    statement(
+        db,
+        "SELECT m.number AS number, p.first_name AS first_name, p.last_name AS last_name, \
+         p.club AS club FROM players p JOIN teams m ON m.id = p.team_id \
+         JOIN pool_teams pt ON pt.team_id = m.id JOIN series s ON s.id = pt.series_id \
+         JOIN tournaments t ON t.id = s.tournament_id WHERE t.slug = ? AND s.slug = ? \
+         ORDER BY m.number, p.position",
+        keys,
+    )
 }
 
 /// The players of the selected teams, by team number then position.

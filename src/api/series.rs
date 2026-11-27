@@ -173,7 +173,7 @@ fn taken(error: worker::Error, series: &domain::Series) -> Problem {
 }
 
 /// The series of a slug in a tournament: 404 when it has none.
-async fn find(db: &D1Database, slug: &Slug, key: &Slug) -> ApiResult<domain::Series> {
+pub(super) async fn find(db: &D1Database, slug: &Slug, key: &Slug) -> ApiResult<domain::Series> {
     db::series::find(db, slug, key)
         .await?
         .ok_or_else(|| Problem::new(ProblemType::NotFound))

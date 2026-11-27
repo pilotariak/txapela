@@ -73,9 +73,26 @@ impl fmt::Display for RegistrationClosed {
 
 impl std::error::Error for RegistrationClosed {}
 
+/// A draw, a move, a tiebreak or a result while the tournament is not in its pools.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct NotInPools(pub(crate) Status);
+
+impl fmt::Display for NotInPools {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "status: pools are drawn and played while the tournament is pools, not {}",
+            self.0.as_str()
+        )
+    }
+}
+
+impl std::error::Error for NotInPools {}
+
 impl Status {
-    /// The statuses in which series and teams change: the pools are drawn once the tournament
-    /// moves to `pools`, and withdrawals then become forfeits (#8).
+    /// The statuses in which series and teams change. Once the tournament moves to `pools`, the
+    /// registered teams are fixed: a team that withdraws then stays in its pool, and the
+    /// organizer records its remaining matches as forfeits.
     pub(crate) const REGISTRATION_OPEN: [Self; 2] = [Self::Draft, Self::Registration];
 
     /// Checks that series and teams can still change: in [`Status::REGISTRATION_OPEN`] only.
@@ -84,6 +101,17 @@ impl Status {
             Ok(())
         } else {
             Err(RegistrationClosed(self))
+        }
+    }
+
+    /// Checks that pools can be drawn, changed and played: in `pools` only. Registration is
+    /// closed by then, so the teams of a draw are fixed, and the final phase (#10) starts from
+    /// standings that no longer change.
+    pub(crate) fn check_pools(self) -> Result<(), NotInPools> {
+        if self == Self::Pools {
+            Ok(())
+        } else {
+            Err(NotInPools(self))
         }
     }
 
@@ -136,7 +164,7 @@ impl FromStr for Status {
 
 #[cfg(test)]
 mod tests {
-    use super::{InvalidTransition, RegistrationClosed, Status};
+    use super::{InvalidTransition, NotInPools, RegistrationClosed, Status};
 
     const ALL: [Status; 5] = [
         Status::Draft,
@@ -217,6 +245,26 @@ mod tests {
             RegistrationClosed(Status::Pools).to_string(),
             "status: series and teams change only while the tournament is draft or \
              registration, not pools",
+            "the detail names the status"
+        );
+    }
+
+    #[test]
+    fn pools_change_and_play_in_pools_only() {
+        for status in ALL {
+            assert_eq!(
+                status.check_pools(),
+                if status == Status::Pools {
+                    Ok(())
+                } else {
+                    Err(NotInPools(status))
+                },
+                "{status:?}"
+            );
+        }
+        assert_eq!(
+            NotInPools(Status::Finals).to_string(),
+            "status: pools are drawn and played while the tournament is pools, not finals",
             "the detail names the status"
         );
     }

@@ -15,8 +15,8 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
 use super::problem::responses::{
-    Conflict, ExtensibleProblemDocument, NotFound, SeriesAndTeamsConflict, Unauthorized,
-    Unprocessable,
+    Conflict, ExtensibleProblemDocument, NotFound, PoolsConflict, SeriesAndTeamsConflict,
+    Unauthorized, Unprocessable,
 };
 use super::problem::{ExtensibleProblemType, ProblemDocument, ProblemType};
 
@@ -53,6 +53,14 @@ use super::problem::{ExtensibleProblemType, ProblemDocument, ProblemType};
         super::teams::get,
         super::teams::update,
         super::teams::delete,
+        super::pools::draw,
+        super::pools::list,
+        super::pools::move_team,
+        super::matches::list,
+        super::matches::get,
+        super::matches::record,
+        super::standings::get,
+        super::standings::tiebreak,
     ),
     components(
         schemas(
@@ -66,7 +74,8 @@ use super::problem::{ExtensibleProblemType, ProblemDocument, ProblemType};
             NotFound,
             Conflict,
             Unprocessable,
-            SeriesAndTeamsConflict
+            SeriesAndTeamsConflict,
+            PoolsConflict
         ),
     ),
     modifiers(&SecuritySchemes),
@@ -76,6 +85,12 @@ use super::problem::{ExtensibleProblemType, ProblemDocument, ProblemType};
         (name = "series", description = "The series of a tournament: one specialty at one level, \
             with a block of team numbers"),
         (name = "teams", description = "The teams that the organizer registers, two players each"),
+        (name = "pools", description = "The pools of a series: drawn in snake order of the seeds, \
+            4 to 6 teams each, named A, B, C…"),
+        (name = "matches", description = "The round robin of each pool, and the results the \
+            organizer records"),
+        (name = "standings", description = "The standings of each pool, computed from its \
+            matches on every read"),
     ),
 )]
 struct ApiDoc;
@@ -149,8 +164,9 @@ mod tests {
             .map(|path| path.as_object().expect("should be an object").len())
             .sum();
         assert_eq!(
-            operations, 16,
-            "the health route and the 5 routes of each of tournaments, series and teams"
+            operations, 24,
+            "the health route, the 5 routes of each of tournaments, series and teams, 3 of \
+             pools, 3 of matches and 2 of standings"
         );
     }
 
@@ -172,6 +188,19 @@ mod tests {
             ("/api/v1/tournaments/{slug}/teams", "post"),
             ("/api/v1/tournaments/{slug}/teams/{number}", "patch"),
             ("/api/v1/tournaments/{slug}/teams/{number}", "delete"),
+            ("/api/v1/tournaments/{slug}/series/{series}/draw", "post"),
+            (
+                "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/teams",
+                "post",
+            ),
+            (
+                "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/tiebreak",
+                "put",
+            ),
+            (
+                "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/matches/{match}/result",
+                "put",
+            ),
         ] {
             assert_eq!(
                 security(path, method),
@@ -186,6 +215,16 @@ mod tests {
             ("/api/v1/tournaments/{slug}/series/{series}", "get"),
             ("/api/v1/tournaments/{slug}/teams", "get"),
             ("/api/v1/tournaments/{slug}/teams/{number}", "get"),
+            ("/api/v1/tournaments/{slug}/series/{series}/pools", "get"),
+            ("/api/v1/tournaments/{slug}/series/{series}/matches", "get"),
+            (
+                "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/matches/{match}",
+                "get",
+            ),
+            (
+                "/api/v1/tournaments/{slug}/series/{series}/standings",
+                "get",
+            ),
         ] {
             assert_eq!(
                 security(path, method),
@@ -221,10 +260,16 @@ mod tests {
             "#/components/schemas/ExtensibleProblemType",
             "the document of the newer routes refers to the open list"
         );
+        let pools_routes = ["/draw", "/pools", "/matches", "/standings"];
         for (path, item) in document["paths"].as_object().expect("should have paths") {
             for (method, operation) in item.as_object().expect("should be an object") {
                 let conflict = operation["responses"]["409"]["$ref"].as_str();
-                if path.contains("/series") || path.contains("/teams") {
+                if pools_routes.iter().any(|route| path.contains(route)) {
+                    assert!(
+                        conflict.is_none_or(|r| r.ends_with("/PoolsConflict")),
+                        "{method} {path}: its 409 lists the open types"
+                    );
+                } else if path.contains("/series") || path.contains("/teams") {
                     assert!(
                         conflict.is_none_or(|r| r.ends_with("/SeriesAndTeamsConflict")),
                         "{method} {path}: its 409 lists the open types"
@@ -236,6 +281,35 @@ mod tests {
                     );
                 }
             }
+        }
+        assert_eq!(
+            document["components"]["responses"]["PoolsConflict"]["content"]["application/problem+json"]
+                ["schema"]["$ref"],
+            "#/components/schemas/ExtensibleProblemDocument",
+            "the 409 of the pools routes refers to the open list"
+        );
+    }
+
+    #[test]
+    fn the_phase_and_state_of_a_match_are_open_lists() {
+        let document: serde_json::Value =
+            serde_json::from_str(&document()).expect("should be JSON");
+        let schemas = &document["components"]["schemas"];
+        for (schema, values) in [
+            ("MatchPhase", serde_json::json!(["pool"])),
+            (
+                "MatchState",
+                serde_json::json!(["scheduled", "played", "forfeit", "postponed"]),
+            ),
+        ] {
+            assert_eq!(
+                schemas[schema]["x-extensible-enum"], values,
+                "{schema}: the final phase (#10) and the calendar (#9) add values"
+            );
+            assert!(
+                schemas[schema].get("enum").is_none(),
+                "{schema}: no closed enum, so that a new value stays additive"
+            );
         }
     }
 }

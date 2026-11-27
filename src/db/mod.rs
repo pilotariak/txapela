@@ -8,16 +8,23 @@
 //! come with the resources that need them, each one in a migration of `database/migrations/`.
 //!
 //! Values are bound as plain JavaScript values: text and civil dates as strings, integers and
-//! reals as numbers. Writes that go together run in one [`batch`], a transaction.
+//! reals as numbers. Writes that go together run in one [`batch`], a transaction. Many rows of
+//! one table, such as the matches of a draw, go in one statement as a [`json`] array that SQL
+//! reads with `json_each`: D1 caps the parameters of a statement, and the statements of a Worker
+//! invocation.
 
 pub(crate) mod courts;
+pub(crate) mod matches;
 pub(crate) mod players;
+pub(crate) mod pool_teams;
+pub(crate) mod pools;
 pub(crate) mod series;
 pub(crate) mod teams;
 pub(crate) mod tournament_specialties;
 pub(crate) mod tournaments;
 
 use jiff::civil::Date;
+use serde_json::Value;
 use worker::wasm_bindgen::JsValue;
 use worker::{D1Database, D1PreparedStatement, D1Result, Error, Result};
 
@@ -64,6 +71,11 @@ pub(crate) fn date(value: Date) -> JsValue {
     text(&value.to_string())
 }
 
+/// A JSON parameter, as text: rows that a statement reads with `json_each(?)`.
+pub(crate) fn json(value: &Value) -> JsValue {
+    text(&value.to_string())
+}
+
 /// A row that the code should not have written. The message names the column, never its value.
 pub(crate) fn corrupt(column: &str) -> Error {
     Error::RustError(format!("unexpected value in column {column}"))
@@ -96,8 +108,19 @@ pub(crate) async fn batch(
 /// condition in its SQL, so that D1 checks it in the statement that writes: a check of `domain`
 /// followed by a separate write lets a concurrent request slip between them.
 pub(crate) fn written(results: &[D1Result]) -> Result<bool> {
-    results
-        .first()
+    wrote(results.first())
+}
+
+/// Whether the last statement of a batch wrote a row. The batches of the pools end with the
+/// statement that adds one to the revision of their series, under the same guard as the others:
+/// it always writes when the guard holds, while an earlier statement may have nothing to write,
+/// such as the deletion of the pools before a first draw.
+pub(crate) fn written_last(results: &[D1Result]) -> Result<bool> {
+    wrote(results.last())
+}
+
+fn wrote(result: Option<&D1Result>) -> Result<bool> {
+    result
         .and_then(|result| result.meta().ok().flatten())
         .and_then(|meta| meta.changes)
         .map(|changes| changes > 0)

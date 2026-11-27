@@ -19,6 +19,10 @@ matches on the courts, final phase and public results.
 - Series and teams: an organizer splits a tournament into series (one specialty at one level, a maximum of teams, a
   block of 100 team numbers) and registers teams of two players in them, until the pools are drawn; anyone reads the
   team numbers, player names and clubs, while licence numbers and contacts stay with the organizer
+- Pools, matches and standings: once the tournament is in pools, an organizer draws each series into pools A, B, C…
+  of 4 to 6 teams, in snake order of their seeds and away from the teams of their club when the draw can, moves a team
+  until the first result, and records and corrects scores and forfeits (the target score to 0); every pool plays a
+  round robin, and anyone reads the pools, the matches and the standings, computed from the matches on every read
 - OpenAPI 3.1 contract in [`openapi.json`](openapi.json), checked against the code by `cargo test` and against the base
   branch by `oasdiff breaking` in CI
 - Landing page at `/`, health check at `/api/v1/health`
@@ -26,29 +30,38 @@ matches on the courts, final phase and public results.
 
 ## API
 
-| Method   | Path                                       | Who       |
-| -------- | ------------------------------------------ | --------- |
-| `GET`    | `/api/v1/health`                           | public    |
-| `GET`    | `/api/v1/tournaments`                      | public    |
-| `POST`   | `/api/v1/tournaments`                      | organizer |
-| `GET`    | `/api/v1/tournaments/:slug`                | public    |
-| `PATCH`  | `/api/v1/tournaments/:slug`                | organizer |
-| `DELETE` | `/api/v1/tournaments/:slug`                | organizer |
-| `GET`    | `/api/v1/tournaments/:slug/series`         | public    |
-| `POST`   | `/api/v1/tournaments/:slug/series`         | organizer |
-| `GET`    | `/api/v1/tournaments/:slug/series/:series` | public    |
-| `PATCH`  | `/api/v1/tournaments/:slug/series/:series` | organizer |
-| `DELETE` | `/api/v1/tournaments/:slug/series/:series` | organizer |
-| `GET`    | `/api/v1/tournaments/:slug/teams`          | public    |
-| `POST`   | `/api/v1/tournaments/:slug/teams`          | organizer |
-| `GET`    | `/api/v1/tournaments/:slug/teams/:number`  | public    |
-| `PATCH`  | `/api/v1/tournaments/:slug/teams/:number`  | organizer |
-| `DELETE` | `/api/v1/tournaments/:slug/teams/:number`  | organizer |
+| Method   | Path                                                                         | Who       |
+| -------- | ---------------------------------------------------------------------------- | --------- |
+| `GET`    | `/api/v1/health`                                                             | public    |
+| `GET`    | `/api/v1/tournaments`                                                        | public    |
+| `POST`   | `/api/v1/tournaments`                                                        | organizer |
+| `GET`    | `/api/v1/tournaments/:slug`                                                  | public    |
+| `PATCH`  | `/api/v1/tournaments/:slug`                                                  | organizer |
+| `DELETE` | `/api/v1/tournaments/:slug`                                                  | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/series`                                           | public    |
+| `POST`   | `/api/v1/tournaments/:slug/series`                                           | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series`                                   | public    |
+| `PATCH`  | `/api/v1/tournaments/:slug/series/:series`                                   | organizer |
+| `DELETE` | `/api/v1/tournaments/:slug/series/:series`                                   | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/teams`                                            | public    |
+| `POST`   | `/api/v1/tournaments/:slug/teams`                                            | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/teams/:number`                                    | public    |
+| `PATCH`  | `/api/v1/tournaments/:slug/teams/:number`                                    | organizer |
+| `DELETE` | `/api/v1/tournaments/:slug/teams/:number`                                    | organizer |
+| `POST`   | `/api/v1/tournaments/:slug/series/:series/draw`                              | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/pools`                             | public    |
+| `POST`   | `/api/v1/tournaments/:slug/series/:series/pools/:pool/teams`                 | organizer |
+| `PUT`    | `/api/v1/tournaments/:slug/series/:series/pools/:pool/tiebreak`              | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/matches`                           | public    |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/pools/:pool/matches/:match`        | public    |
+| `PUT`    | `/api/v1/tournaments/:slug/series/:series/pools/:pool/matches/:match/result` | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/standings`                         | public    |
 
 Organizer routes take `Authorization: Bearer <token>`. Until organizer authentication is settled
 ([#5](https://github.com/pilotariak/txapela/issues/5)), txapela compares the SHA-256 of the token with the
 `ORGANIZER_TOKEN_SHA256` Worker secret, and answers 401 when the secret is missing. A draft tournament, with its series
-and teams, is seen only with the token, and so are the licence numbers and contacts of players. See
+and teams, is seen only with the token, and so are the licence numbers and contacts of players, which the pools,
+matches and standings never show. See
 [`openapi.json`](openapi.json) for the bodies and errors, and [AGENTS.md](AGENTS.md) for the rules.
 
 ## Layout
