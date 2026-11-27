@@ -9,6 +9,17 @@
 # Cargo build output
 Cargo.lock.*
 
+# Worker build output (worker-build)
+/build/
+
+# Node
+node_modules/
+
+# Wrangler
+.wrangler/
+.dev.vars*
+!.dev.vars.example
+
 # Test coverage reports
 coverage/
 *.profraw

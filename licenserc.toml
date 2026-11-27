@@ -5,6 +5,20 @@
 path = "hack/header.txt"
 
 [files]
-includes = ["*.yml", "*.yaml", "*.toml", "*.sh", "Makefile"]
+includes = ["*.rs", "*.yml", "*.yaml", "*.toml", "*.sh", "*.sql", "*.mjs", "*.html", "Makefile"]
 
-excludes = ["hack/header.txt", "*.json", "vendor/*", "node_modules/*", "target/*", ".git/*"]
+excludes = [
+  "hack/header.txt",
+  "*.json",
+  "vendor/*",
+  "node_modules/*",
+  "target/*",
+  "build/*",
+  ".wrangler/*",
+  ".git/*",
+]
+
+# hawkeye has no built-in comment style for this extension.
+[[rules]]
+extensions = ["mjs"]
+style_out = "doubleslash"
