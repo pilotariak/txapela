@@ -13,11 +13,12 @@ use serde::Deserialize;
 use worker::{D1Database, D1PreparedStatement, Result};
 
 use super::{
-    Selection, batch, corrupt, courts, date, int, read_date, real, statement, text,
-    tournament_specialties,
+    Guard, Selection, batch, corrupt, courts, date, int, read_date, real, statement, text,
+    tournament_specialties, written,
 };
 use crate::domain::slug::Slug;
 use crate::domain::status::Status;
+use crate::domain::team::TeamStatus;
 use crate::domain::tournament::{Dates, Points, SpecialtyTarget, Tournament, Venue};
 
 const COLUMNS: &str = "slug, name, organizing_club, venue_name, venue_address, venue_latitude, \
@@ -203,47 +204,85 @@ fn insert(db: &D1Database, tournament: &Tournament) -> Result<D1PreparedStatemen
 /// Inserts a tournament with its courts and its specialties, in one transaction. A slug that
 /// exists fails on the UNIQUE constraint of `tournaments.slug`, and nothing is written.
 pub(crate) async fn create(db: &D1Database, tournament: &Tournament) -> Result<()> {
+    let guard = Guard::none();
     let mut statements = vec![insert(db, tournament)?];
-    statements.extend(courts::insert(db, &tournament.slug, &tournament.courts)?);
+    statements.extend(courts::insert(
+        db,
+        &tournament.slug,
+        &tournament.courts,
+        &guard,
+    )?);
     statements.extend(tournament_specialties::insert(
         db,
         &tournament.slug,
         &tournament.specialties,
+        &guard,
     )?);
     batch(db, statements).await?;
     Ok(())
 }
 
+/// The condition of a change that can break the series and teams of the tournament `g`
+/// ([`Tournament::touches_entries`]): its registered teams fit `after.max_teams`, and no series
+/// plays a specialty that `after` drops. It reads `teams` and `series` only, which a save never
+/// writes.
+fn entries_guard(after: &Tournament) -> Guard {
+    let specialties = vec!["?"; after.specialties.len()].join(", ");
+    let mut values = vec![text(TeamStatus::Registered.as_str()), int(after.max_teams)];
+    values.extend(
+        after
+            .specialties
+            .iter()
+            .map(|specialty| text(specialty.specialty.as_str())),
+    );
+    Guard::new(
+        format!(
+            "(SELECT count(*) FROM teams r WHERE r.tournament_id = g.id AND r.status = ?) <= ? \
+             AND NOT EXISTS (SELECT 1 FROM series x WHERE x.tournament_id = g.id \
+             AND x.specialty NOT IN ({specialties}))"
+        ),
+        values,
+    )
+}
+
 /// Writes a tournament after a change, in one transaction. Courts and specialties are replaced
-/// only when they changed, which `domain` allows in draft only.
-pub(crate) async fn save(db: &D1Database, before: &Tournament, after: &Tournament) -> Result<()> {
+/// only when they changed, which `domain` allows in draft only. A change that can break its
+/// series and teams carries [`entries_guard`] in every statement: `false` when it does not
+/// hold, and nothing is written.
+pub(crate) async fn save(db: &D1Database, before: &Tournament, after: &Tournament) -> Result<bool> {
+    let guard = if before.touches_entries(after) {
+        entries_guard(after)
+    } else {
+        Guard::none()
+    };
     let assignments = COLUMNS
         .split(", ")
         .skip(1)
         .map(|column| format!("{column} = ?"))
         .collect::<Vec<_>>()
         .join(", ");
+    let (tournament, guard_values) = guard.tournament(after.slug.as_str());
     let mut bound = values(after).to_vec();
-    bound.push(text(after.slug.as_str()));
+    bound.extend(guard_values);
     let mut statements = vec![statement(
         db,
-        &format!("UPDATE tournaments SET {assignments} WHERE slug = ?"),
+        &format!("UPDATE tournaments SET {assignments} WHERE id IN (SELECT g.id {tournament})"),
         &bound,
     )?];
     if before.courts != after.courts {
-        statements.push(courts::delete(db, &after.slug)?);
-        statements.extend(courts::insert(db, &after.slug, &after.courts)?);
+        statements.push(courts::delete(db, &after.slug, &guard)?);
+        statements.extend(courts::insert(db, &after.slug, &after.courts, &guard)?);
     }
     if before.specialties != after.specialties {
-        statements.push(tournament_specialties::delete(db, &after.slug)?);
+        statements.push(tournament_specialties::delete(db, &after.slug, &guard)?);
         statements.extend(tournament_specialties::insert(
             db,
             &after.slug,
             &after.specialties,
+            &guard,
         )?);
     }
-    batch(db, statements).await?;
-    Ok(())
+    written(&batch(db, statements).await?)
 }
 
 /// Deletes a tournament: its courts and its specialties go with it (ON DELETE CASCADE).

@@ -6,15 +6,16 @@
 //! Writes need the organizer token (`auth.rs`). Reads are public, but a draft is seen only with
 //! the organizer token: without it, `GET /tournaments/:slug` answers 404 as for an unknown slug,
 //! and the list leaves drafts out. Checks come in this order: 401, then 404, then the body (422),
-//! then the rules of `domain` (409, then 422).
+//! then the rules of `domain` (409, then 422), the series and teams of the tournament last
+//! (422). These routes send only the problem types of `problem::FROZEN`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use worker::{Request, Response, RouteContext};
+use worker::{D1Database, Request, Response, RouteContext};
 
 use super::auth::{self, Viewer};
 use super::problem::{ApiResult, Problem, ProblemType};
-use super::{database, from_value, json, no_content, read_value, slug_param};
+use super::{database, from_value, json, no_content, read_value, refusal, slug_param};
 use crate::db;
 use crate::domain::civil::parse_date;
 use crate::domain::slug::{SLUG_RULE, Slug};
@@ -201,6 +202,27 @@ fn view(tournament: &domain::Tournament) -> Tournament {
     }
 }
 
+/// The tournament of a slug as `viewer` sees it: 404 when no tournament has it, or when it is a
+/// draft and the viewer is not the organizer. Its series and teams answer the same.
+pub(super) async fn visible(
+    db: &D1Database,
+    slug: &Slug,
+    viewer: Viewer,
+) -> ApiResult<domain::Tournament> {
+    db::tournaments::find(db, slug)
+        .await?
+        .filter(|tournament| viewer == Viewer::Organizer || tournament.is_public())
+        .ok_or_else(|| Problem::new(ProblemType::NotFound))
+}
+
+/// The tournament of a slug, drafts included, for the writes of the organizer: 404 when no
+/// tournament has it.
+pub(super) async fn stored(db: &D1Database, slug: &Slug) -> ApiResult<domain::Tournament> {
+    db::tournaments::find(db, slug)
+        .await?
+        .ok_or_else(|| Problem::new(ProblemType::NotFound))
+}
+
 fn specialty_targets(specialties: Vec<SpecialtyTarget>) -> Vec<domain::SpecialtyTarget> {
     specialties
         .into_iter()
@@ -378,10 +400,7 @@ pub(super) async fn get(req: Request, ctx: RouteContext<()>) -> ApiResult<Respon
     let viewer = auth::viewer(&req, &ctx.env)?;
     let slug = slug_param(&ctx)?;
     let db = database(&ctx.env)?;
-    let tournament = db::tournaments::find(&db, &slug)
-        .await?
-        .filter(|tournament| viewer == Viewer::Organizer || tournament.is_public())
-        .ok_or_else(|| Problem::new(ProblemType::NotFound))?;
+    let tournament = visible(&db, &slug, viewer).await?;
     json(200, &view(&tournament))
 }
 
@@ -506,7 +525,8 @@ fn changes(value: Value) -> ApiResult<domain::TournamentChanges> {
 
 /// Change a tournament (organizer): a partial body, checked on the merged state with the rules of
 /// creation. Aire, specialties, points, ranking and courts change only in draft. `status` moves
-/// one step forward.
+/// one step forward. A specialty that a series plays stays, and `max_teams` stays at least the
+/// registered teams (422).
 #[cfg_attr(test, utoipa::path(
     patch,
     path = "/api/v1/tournaments/{slug}",
@@ -527,16 +547,36 @@ pub(super) async fn update(mut req: Request, ctx: RouteContext<()>) -> ApiResult
     auth::organizer(&req, &ctx.env)?;
     let slug = slug_param(&ctx)?;
     let db = database(&ctx.env)?;
-    let stored = db::tournaments::find(&db, &slug)
-        .await?
-        .ok_or_else(|| Problem::new(ProblemType::NotFound))?;
+    let stored = stored(&db, &slug).await?;
     let patch = changes(read_value(&mut req).await?)?;
-    let after = stored.change(patch)?;
-    db::tournaments::save(&db, &stored, &after).await?;
+    let after = stored.change(patch.clone())?;
+    if stored.touches_entries(&after) {
+        after.check_entries(&db::series::entries(&db, &slug).await?)?;
+    }
+    if !db::tournaments::save(&db, &stored, &after).await? {
+        return Err(refusal(recheck_change(&db, &slug, patch).await));
+    }
     json(200, &view(&after))
 }
 
-/// Delete a draft tournament with its courts and specialties (organizer).
+/// The checks of a change that D1 refused ([`db::tournaments::save`] answered `false`), run
+/// again on the state D1 holds now: another request registered a team or created a series on a
+/// dropped specialty since the first checks. They answer 422, as the first checks do.
+async fn recheck_change(
+    db: &D1Database,
+    slug: &Slug,
+    changes: domain::TournamentChanges,
+) -> ApiResult<()> {
+    let stored = stored(db, slug).await?;
+    let after = stored.change(changes)?;
+    if stored.touches_entries(&after) {
+        after.check_entries(&db::series::entries(db, slug).await?)?;
+    }
+    Ok(())
+}
+
+/// Delete a draft tournament with its courts, specialties, series, teams and players
+/// (organizer).
 #[cfg_attr(test, utoipa::path(
     delete,
     path = "/api/v1/tournaments/{slug}",
@@ -545,7 +585,7 @@ pub(super) async fn update(mut req: Request, ctx: RouteContext<()>) -> ApiResult
     params(("slug" = String, Path, description = "Tournament slug")),
     security(("bearer" = [])),
     responses(
-        (status = 204, description = "Tournament deleted, with its courts and specialties"),
+        (status = 204, description = "Tournament deleted, with its courts, specialties, series, teams and players"),
         (status = 401, response = super::problem::responses::Unauthorized),
         (status = 404, response = super::problem::responses::NotFound),
         (status = 409, response = super::problem::responses::Conflict),
@@ -555,9 +595,7 @@ pub(super) async fn delete(req: Request, ctx: RouteContext<()>) -> ApiResult<Res
     auth::organizer(&req, &ctx.env)?;
     let slug = slug_param(&ctx)?;
     let db = database(&ctx.env)?;
-    let stored = db::tournaments::find(&db, &slug)
-        .await?
-        .ok_or_else(|| Problem::new(ProblemType::NotFound))?;
+    let stored = stored(&db, &slug).await?;
     stored.check_delete()?;
     db::tournaments::delete(&db, &slug).await?;
     no_content()

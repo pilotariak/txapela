@@ -3,8 +3,23 @@
 
 //! Civil dates as text: `YYYY-MM-DD`, as stored in D1 and sent in bodies. They are dates in
 //! Europe/Paris, without a time of day: times come with the calendar (#9).
+//!
+//! No function here reads a clock: the routes read the Worker's and pass the instant in.
 
+use jiff::Timestamp;
 use jiff::civil::Date;
+use jiff::tz::{self, TimeZone};
+
+/// The time zone of every civil date of txapela, embedded at compile time: a Worker has no
+/// system time zone database.
+static PARIS: TimeZone = tz::get!("Europe/Paris");
+
+/// The civil date in Europe/Paris at an instant given in milliseconds since the Unix epoch, as
+/// the Worker's clock gives it. `None` for an instant jiff cannot represent.
+pub(crate) fn paris_date(unix_milliseconds: i64) -> Option<Date> {
+    let instant = Timestamp::from_millisecond(unix_milliseconds).ok()?;
+    Some(instant.to_zoned_datetime(PARIS.clone()).date())
+}
 
 /// The two-digit number at `bytes[at..at + 2]`.
 fn two_digits(bytes: &[u8], at: usize) -> Option<i8> {
@@ -29,9 +44,51 @@ pub(crate) fn parse_date(s: &str) -> Option<Date> {
 
 #[cfg(test)]
 mod tests {
+    use jiff::Timestamp;
     use jiff::civil::date;
 
-    use super::parse_date;
+    use super::{paris_date, parse_date};
+
+    /// The milliseconds of an RFC 3339 instant, as the Worker's clock gives them.
+    fn millis(instant: &str) -> i64 {
+        instant
+            .parse::<Timestamp>()
+            .expect("should be an RFC 3339 instant")
+            .as_millisecond()
+    }
+
+    #[test]
+    fn the_date_of_an_instant_is_the_one_of_europe_paris() {
+        for (instant, expected, why) in [
+            (
+                "2027-01-15T22:59:59Z",
+                date(2027, 1, 15),
+                "23:59:59 in winter, UTC+1",
+            ),
+            (
+                "2027-01-15T23:00:00Z",
+                date(2027, 1, 16),
+                "midnight in winter, UTC+1",
+            ),
+            (
+                "2027-03-31T21:59:59Z",
+                date(2027, 3, 31),
+                "23:59:59 in summer, UTC+2",
+            ),
+            (
+                "2027-03-31T22:00:00Z",
+                date(2027, 4, 1),
+                "midnight in summer, UTC+2",
+            ),
+        ] {
+            assert_eq!(paris_date(millis(instant)), Some(expected), "{why}");
+        }
+        assert_eq!(
+            paris_date(i64::MAX),
+            None,
+            "an instant jiff cannot represent"
+        );
+    }
 
     #[test]
     fn dates_are_yyyy_mm_dd_only() {

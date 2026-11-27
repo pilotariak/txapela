@@ -11,8 +11,10 @@ import {
   ORGANIZER_TOKEN,
   assertProblem,
   createTournament,
+  seriesBody,
   sha256Hex,
   startApi,
+  teamBody,
   tournamentBody,
 } from "./worker.mjs";
 
@@ -34,6 +36,12 @@ const writes = [
   ["POST", "/tournaments", tournamentBody({ slug: "auth-new" })],
   ["PATCH", "/tournaments/auth-draft", { name: "Autre nom" }],
   ["DELETE", "/tournaments/auth-draft", undefined],
+  ["POST", "/tournaments/auth-draft/series", seriesBody()],
+  ["PATCH", "/tournaments/auth-draft/series/1re-serie-a", { name: "Autre série" }],
+  ["DELETE", "/tournaments/auth-draft/series/1re-serie-a", undefined],
+  ["POST", "/tournaments/auth-draft/teams", teamBody()],
+  ["PATCH", "/tournaments/auth-draft/teams/101", { fee_paid: true }],
+  ["DELETE", "/tournaments/auth-draft/teams/101", undefined],
 ];
 
 async function assertUnauthorized(res, why) {
@@ -94,7 +102,12 @@ describe("read routes", () => {
       !(await list.json()).tournaments.some((t) => t.slug === draft.slug),
       "the public list leaves the draft out",
     );
-    for (const path of ["/tournaments", `/tournaments/${draft.slug}`]) {
+    for (const path of [
+      "/tournaments",
+      `/tournaments/${draft.slug}`,
+      `/tournaments/${draft.slug}/series`,
+      `/tournaments/${draft.slug}/teams`,
+    ]) {
       await assertUnauthorized(await call("GET", path, { token: "wrong-token" }), `GET ${path} with a wrong token`);
       await assertUnauthorized(
         await call("GET", path, { headers: { Authorization: "Basic dXNlcjpwYXNz" } }),

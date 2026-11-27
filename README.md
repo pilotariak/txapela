@@ -16,6 +16,9 @@ matches on the courts, final phase and public results.
 - Tournaments: an organizer creates a tournament as a draft (aire, courts, specialties and their target scores,
   points, dates, venue), changes it, moves its status one step forward, and deletes a draft; anyone reads the
   tournaments that are not drafts
+- Series and teams: an organizer splits a tournament into series (one specialty at one level, a maximum of teams, a
+  block of 100 team numbers) and registers teams of two players in them, until the pools are drawn; anyone reads the
+  team numbers, player names and clubs, while licence numbers and contacts stay with the organizer
 - OpenAPI 3.1 contract in [`openapi.json`](openapi.json), checked against the code by `cargo test` and against the base
   branch by `oasdiff breaking` in CI
 - Landing page at `/`, health check at `/api/v1/health`
@@ -23,19 +26,30 @@ matches on the courts, final phase and public results.
 
 ## API
 
-| Method   | Path                        | Who       |
-| -------- | --------------------------- | --------- |
-| `GET`    | `/api/v1/health`            | public    |
-| `GET`    | `/api/v1/tournaments`       | public    |
-| `POST`   | `/api/v1/tournaments`       | organizer |
-| `GET`    | `/api/v1/tournaments/:slug` | public    |
-| `PATCH`  | `/api/v1/tournaments/:slug` | organizer |
-| `DELETE` | `/api/v1/tournaments/:slug` | organizer |
+| Method   | Path                                       | Who       |
+| -------- | ------------------------------------------ | --------- |
+| `GET`    | `/api/v1/health`                           | public    |
+| `GET`    | `/api/v1/tournaments`                      | public    |
+| `POST`   | `/api/v1/tournaments`                      | organizer |
+| `GET`    | `/api/v1/tournaments/:slug`                | public    |
+| `PATCH`  | `/api/v1/tournaments/:slug`                | organizer |
+| `DELETE` | `/api/v1/tournaments/:slug`                | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/series`         | public    |
+| `POST`   | `/api/v1/tournaments/:slug/series`         | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series` | public    |
+| `PATCH`  | `/api/v1/tournaments/:slug/series/:series` | organizer |
+| `DELETE` | `/api/v1/tournaments/:slug/series/:series` | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/teams`          | public    |
+| `POST`   | `/api/v1/tournaments/:slug/teams`          | organizer |
+| `GET`    | `/api/v1/tournaments/:slug/teams/:number`  | public    |
+| `PATCH`  | `/api/v1/tournaments/:slug/teams/:number`  | organizer |
+| `DELETE` | `/api/v1/tournaments/:slug/teams/:number`  | organizer |
 
 Organizer routes take `Authorization: Bearer <token>`. Until organizer authentication is settled
 ([#5](https://github.com/pilotariak/txapela/issues/5)), txapela compares the SHA-256 of the token with the
-`ORGANIZER_TOKEN_SHA256` Worker secret, and answers 401 when the secret is missing. A draft tournament is seen only
-with the token. See [`openapi.json`](openapi.json) for the bodies and errors, and [AGENTS.md](AGENTS.md) for the rules.
+`ORGANIZER_TOKEN_SHA256` Worker secret, and answers 401 when the secret is missing. A draft tournament, with its series
+and teams, is seen only with the token, and so are the licence numbers and contacts of players. See
+[`openapi.json`](openapi.json) for the bodies and errors, and [AGENTS.md](AGENTS.md) for the rules.
 
 ## Layout
 

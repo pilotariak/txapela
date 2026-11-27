@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "txapela",
-    "description": "Pelota tournaments run by a club. Paths are under /api/v1. Organizers write with a bearer token; reads are public, and a draft tournament is seen only with the organizer token. Errors are RFC 9457 problem details with a stable type. Dates are civil dates YYYY-MM-DD in Europe/Paris. Every API response sends Cache-Control: private, no-store.",
+    "description": "Pelota tournaments run by a club. Paths are under /api/v1. Organizers write with a bearer token; reads are public, and a draft tournament, with its series and teams, is seen only with the organizer token. The licence numbers and contacts of players are for the organizer only. Errors are RFC 9457 problem details with a stable type. Dates are civil dates YYYY-MM-DD in Europe/Paris. Every API response sends Cache-Control: private, no-store.",
     "contact": {
       "name": "Nicolas Lamirault",
       "email": "nicolas.lamirault@gmail.com"
@@ -171,7 +171,7 @@
         "tags": [
           "tournaments"
         ],
-        "summary": "Delete a draft tournament with its courts and specialties (organizer).",
+        "summary": "Delete a draft tournament with its courts, specialties, series, teams and players\n(organizer).",
         "operationId": "deleteTournament",
         "parameters": [
           {
@@ -186,7 +186,7 @@
         ],
         "responses": {
           "204": {
-            "description": "Tournament deleted, with its courts and specialties"
+            "description": "Tournament deleted, with its courts, specialties, series, teams and players"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -208,7 +208,7 @@
         "tags": [
           "tournaments"
         ],
-        "summary": "Change a tournament (organizer): a partial body, checked on the merged state with the rules of\ncreation. Aire, specialties, points, ranking and courts change only in draft. `status` moves\none step forward.",
+        "summary": "Change a tournament (organizer): a partial body, checked on the merged state with the rules of\ncreation. Aire, specialties, points, ranking and courts change only in draft. `status` moves\none step forward. A specialty that a series plays stays, and `max_teams` stays at least the\nregistered teams (422).",
         "operationId": "updateTournament",
         "parameters": [
           {
@@ -261,6 +261,557 @@
           }
         ]
       }
+    },
+    "/api/v1/tournaments/{slug}/series": {
+      "get": {
+        "tags": [
+          "series"
+        ],
+        "summary": "List the series of a tournament, by position then slug. The series of a draft only with the\norganizer token.",
+        "operationId": "listSeries",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series of the tournament",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "series"
+        ],
+        "summary": "Create a series in a tournament, while it is a draft or in registration (organizer).",
+        "operationId": "createSeries",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSeries"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Series created",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "/api/v1/tournaments/{slug}/series/{series}"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Series"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/SeriesAndTeamsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}": {
+      "get": {
+        "tags": [
+          "series"
+        ],
+        "summary": "A series: 404 when the tournament has no series with this slug, or when the tournament is a\ndraft and the caller has no organizer token.",
+        "operationId": "getSeries",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Series"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "series"
+        ],
+        "summary": "Delete a series without teams, while the tournament is a draft or in registration\n(organizer).",
+        "operationId": "deleteSeries",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Series deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/SeriesAndTeamsConflict"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "series"
+        ],
+        "summary": "Change a series (organizer): a partial body, checked on the merged state with the rules of\ncreation. Name and position change in every status; specialty, maximum and number block only\nwhile the tournament is a draft or in registration. The block cannot move under teams, and\nthe maximum stays at least the registered teams.",
+        "operationId": "updateSeries",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeriesChanges"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The series after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Series"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/SeriesAndTeamsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/teams": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "List the teams of a tournament, by number. The teams of a draft only with the organizer\ntoken, and licence numbers, contacts, registration dates and fees only for the organizer.",
+        "operationId": "listTeams",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The teams of the tournament",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Register a team in a series, while the tournament is a draft or in registration\n(organizer). The registration date is the day of the request in Europe/Paris.",
+        "operationId": "createTeam",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTeam"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Team registered",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "/api/v1/tournaments/{slug}/teams/{number}"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/SeriesAndTeamsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/teams/{number}": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "A team: 404 when the tournament has no team with this number, or when the tournament is a\ndraft and the caller has no organizer token. Licence numbers, contacts, registration date\nand fee only for the organizer.",
+        "operationId": "getTeam",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "Team number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Delete a team with its players, while the tournament is a draft or in registration\n(organizer).",
+        "operationId": "deleteTeam",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "Team number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Team deleted, with its players"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/SeriesAndTeamsConflict"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "Change a team (organizer): its players and fee in every status, its status while the\ntournament is a draft or in registration. Withdrawing once the pools are drawn is a forfeit,\nleft to the pools (#8).",
+        "operationId": "updateTeam",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "Team number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamChanges"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The team after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/SeriesAndTeamsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -285,6 +836,94 @@
             "type": "string",
             "description": "Trimmed, not empty, unique within the tournament.",
             "example": "Trinquet A"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateSeries": {
+        "type": "object",
+        "description": "`POST /tournaments/:slug/series`.",
+        "required": [
+          "slug",
+          "name",
+          "specialty",
+          "max_teams",
+          "position",
+          "number_block"
+        ],
+        "properties": {
+          "max_teams": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 100,
+            "minimum": 2
+          },
+          "name": {
+            "type": "string",
+            "example": "1re Série A"
+          },
+          "number_block": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A multiple of 100 that no other series of the tournament has.",
+            "multipleOf": 100,
+            "maximum": 9900,
+            "minimum": 100
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "slug": {
+            "type": "string",
+            "description": "3 to 64 characters among a-z, 0-9 and single hyphens, starting and ending with a letter\nor a digit, unique within the tournament. Immutable.",
+            "example": "1re-serie-a",
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "specialty": {
+            "$ref": "#/components/schemas/Specialty",
+            "description": "A specialty the tournament declares."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateTeam": {
+        "type": "object",
+        "description": "`POST /tournaments/:slug/teams`. A new team is registered, on the day of the request.",
+        "required": [
+          "number",
+          "series",
+          "players"
+        ],
+        "properties": {
+          "fee_paid": {
+            "type": "boolean",
+            "description": "Default `false`."
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "description": "In the number block of the series, unique within the tournament. Immutable.",
+            "example": 101,
+            "maximum": 9999,
+            "minimum": 100
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Player"
+            },
+            "description": "Exactly two.",
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "series": {
+            "type": "string",
+            "description": "The slug of a series of the tournament. Immutable.",
+            "example": "1re-serie-a"
           }
         },
         "additionalProperties": false
@@ -422,6 +1061,54 @@
         },
         "additionalProperties": false
       },
+      "ExtensibleProblemDocument": {
+        "type": "object",
+        "description": "The body of an error response whose `type` list grows: the series and teams routes.",
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ExtensibleProblemType"
+          }
+        }
+      },
+      "ExtensibleProblemType": {
+        "type": "string",
+        "description": "The `type` of a problem: one per error, stable across versions. The list grows: a client maps the types it knows and falls back on the status for the others.",
+        "x-extensible-enum": [
+          "https://txapela.pilotariak.com/problems/unauthorized",
+          "https://txapela.pilotariak.com/problems/not-found",
+          "https://txapela.pilotariak.com/problems/method-not-allowed",
+          "https://txapela.pilotariak.com/problems/slug-taken",
+          "https://txapela.pilotariak.com/problems/not-a-draft",
+          "https://txapela.pilotariak.com/problems/invalid-transition",
+          "https://txapela.pilotariak.com/problems/invalid-request",
+          "https://txapela.pilotariak.com/problems/internal",
+          "https://txapela.pilotariak.com/problems/registration-closed",
+          "https://txapela.pilotariak.com/problems/series-full",
+          "https://txapela.pilotariak.com/problems/tournament-full",
+          "https://txapela.pilotariak.com/problems/number-taken",
+          "https://txapela.pilotariak.com/problems/block-taken",
+          "https://txapela.pilotariak.com/problems/series-has-teams"
+        ]
+      },
       "Health": {
         "type": "object",
         "description": "Liveness of txapela.",
@@ -434,6 +1121,39 @@
             "example": "ok"
           }
         }
+      },
+      "Player": {
+        "type": "object",
+        "description": "A player. `licence` and `contact` are personal data: the organizer sends and reads them, and\npublic responses leave them out.",
+        "required": [
+          "first_name",
+          "last_name"
+        ],
+        "properties": {
+          "club": {
+            "type": "string",
+            "description": "Free text.",
+            "example": "Club Exemple de Pelote"
+          },
+          "contact": {
+            "type": "string",
+            "description": "A phone number or an email address. Organizer only: absent from public responses.",
+            "example": "joueur@example.org"
+          },
+          "first_name": {
+            "type": "string",
+            "example": "Ane"
+          },
+          "last_name": {
+            "type": "string",
+            "example": "Exemple"
+          },
+          "licence": {
+            "type": "string",
+            "description": "Organizer only: absent from public responses."
+          }
+        },
+        "additionalProperties": false
       },
       "Points": {
         "type": "object",
@@ -535,6 +1255,115 @@
           "points_then_goal_average"
         ]
       },
+      "Series": {
+        "type": "object",
+        "description": "A series of a tournament.",
+        "required": [
+          "slug",
+          "name",
+          "specialty",
+          "target_score",
+          "max_teams",
+          "position",
+          "number_block"
+        ],
+        "properties": {
+          "max_teams": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The most registered teams the series takes: withdrawn teams do not count.",
+            "example": 16,
+            "maximum": 100,
+            "minimum": 2
+          },
+          "name": {
+            "type": "string",
+            "example": "1re Série A"
+          },
+          "number_block": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The first team number of the series: its teams are numbered from `number_block` to\n`number_block` + 99, and no other series of the tournament has this block.",
+            "example": 100,
+            "multipleOf": 100,
+            "maximum": 9900,
+            "minimum": 100
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Display order: series are listed by position, then slug.",
+            "example": 1,
+            "minimum": 1
+          },
+          "slug": {
+            "type": "string",
+            "description": "The public key within the tournament, chosen at creation and immutable.",
+            "example": "1re-serie-a"
+          },
+          "specialty": {
+            "$ref": "#/components/schemas/Specialty",
+            "description": "One of the specialties of the tournament."
+          },
+          "target_score": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The score a team must reach to win a match: the target score of the specialty in the\ntournament.",
+            "example": 40,
+            "minimum": 1
+          }
+        }
+      },
+      "SeriesChanges": {
+        "type": "object",
+        "description": "`PATCH /tournaments/:slug/series/:series`: absent fields keep their value, and no field\ntakes `null`. The slug never changes. Specialty, maximum and number block change only while\nthe tournament is a draft or in registration.",
+        "properties": {
+          "max_teams": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Draft or registration only. At least the registered teams of the series.",
+            "maximum": 100,
+            "minimum": 2
+          },
+          "name": {
+            "type": "string"
+          },
+          "number_block": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Draft or registration only, and only while the series has no team.",
+            "multipleOf": 100,
+            "maximum": 9900,
+            "minimum": 100
+          },
+          "position": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "specialty": {
+            "$ref": "#/components/schemas/Specialty",
+            "description": "Draft or registration only. A specialty the tournament declares."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SeriesList": {
+        "type": "object",
+        "description": "`GET /tournaments/:slug/series`.",
+        "required": [
+          "series"
+        ],
+        "properties": {
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Series"
+            },
+            "description": "By position, then slug."
+          }
+        }
+      },
       "Specialty": {
         "type": "string",
         "description": "A specialty played in the tournament: `tournament_specialties.specialty`. The order of the\nvariants is the order of a tournament's specialties.",
@@ -572,6 +1401,100 @@
           "pools",
           "finals",
           "finished"
+        ]
+      },
+      "Team": {
+        "type": "object",
+        "description": "A team of a tournament.",
+        "required": [
+          "number",
+          "series",
+          "status",
+          "players"
+        ],
+        "properties": {
+          "fee_paid": {
+            "type": "boolean",
+            "description": "Organizer only."
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The public key within the tournament, in the number block of its series. Immutable.",
+            "example": 101,
+            "maximum": 9999,
+            "minimum": 100
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Player"
+            },
+            "description": "The two players, in the organizer's order.",
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "registered_on": {
+            "type": "string",
+            "format": "date",
+            "description": "Organizer only: the date in Europe/Paris when the organizer registered the team, set by\ntxapela.",
+            "example": "2027-03-05"
+          },
+          "series": {
+            "type": "string",
+            "description": "The slug of its series. Immutable.",
+            "example": "1re-serie-a"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TeamStatus"
+          }
+        }
+      },
+      "TeamChanges": {
+        "type": "object",
+        "description": "`PATCH /tournaments/:slug/teams/:number`: absent fields keep their value, and no field takes\n`null`. The number, the series and the registration date never change.",
+        "properties": {
+          "fee_paid": {
+            "type": "boolean"
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Player"
+            },
+            "description": "Replaces both players.",
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "status": {
+            "$ref": "#/components/schemas/TeamStatus",
+            "description": "Draft or registration only: a withdrawn team registered again needs a place in its\nseries and tournament."
+          }
+        },
+        "additionalProperties": false
+      },
+      "TeamList": {
+        "type": "object",
+        "description": "`GET /tournaments/:slug/teams`.",
+        "required": [
+          "teams"
+        ],
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Team"
+            },
+            "description": "By number."
+          }
+        }
+      },
+      "TeamStatus": {
+        "type": "string",
+        "description": "`teams.status`. A new team is registered.",
+        "enum": [
+          "registered",
+          "withdrawn"
         ]
       },
       "Tournament": {
@@ -804,11 +1727,21 @@
         }
       },
       "NotFound": {
-        "description": "No tournament with this slug, or a draft and no organizer token: both answer the same.",
+        "description": "No tournament with this slug, or a draft and no organizer token: both answer the same.\nUnder a tournament, no series or team with this key either.",
         "content": {
           "application/problem+json": {
             "schema": {
               "$ref": "#/components/schemas/ProblemDocument"
+            }
+          }
+        }
+      },
+      "SeriesAndTeamsConflict": {
+        "description": "A series or team that conflicts with its tournament, its series or the other series and\nteams: registration closed, a slug, number block or team number taken, a full series or\ntournament, or a series that still has teams.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ExtensibleProblemDocument"
             }
           }
         }
@@ -858,6 +1791,14 @@
     {
       "name": "tournaments",
       "description": "Create, read, change and delete tournaments"
+    },
+    {
+      "name": "series",
+      "description": "The series of a tournament: one specialty at one level, with a block of team numbers"
+    },
+    {
+      "name": "teams",
+      "description": "The teams that the organizer registers, two players each"
     }
   ]
 }

@@ -13,11 +13,9 @@ use core::str::FromStr;
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
+use super::rule::{Invalid, MAX_INTEGER, integer, invalid, required_text};
 use super::slug::Slug;
 use super::status::{InvalidTransition, Status};
-
-/// The largest integer that D1 stores exactly: values travel as JavaScript numbers.
-pub(crate) const MAX_INTEGER: i64 = (1 << 53) - 1;
 
 /// Defaults of the points of a match: a win, a loss and a forfeit.
 const DEFAULT_POINTS: Points = Points {
@@ -244,52 +242,8 @@ pub(crate) struct Tournament {
     pub(crate) status: Status,
 }
 
-/// A value that breaks a rule of a tournament: the API answers 422 with this text, which names
-/// the field and the rule.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct InvalidTournament {
-    pub(crate) field: &'static str,
-    pub(crate) reason: String,
-}
-
-impl fmt::Display for InvalidTournament {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.field, self.reason)
-    }
-}
-
-impl std::error::Error for InvalidTournament {}
-
-fn invalid(field: &'static str, reason: impl Into<String>) -> InvalidTournament {
-    InvalidTournament {
-        field,
-        reason: reason.into(),
-    }
-}
-
-/// Text trimmed of surrounding blanks, which cannot be empty.
-fn required_text(field: &'static str, value: &str) -> Result<String, InvalidTournament> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Err(invalid(field, "cannot be empty"));
-    }
-    Ok(value.to_owned())
-}
-
-/// An integer from `min` to [`MAX_INTEGER`].
-fn integer(field: &'static str, value: i64, min: i64) -> Result<(), InvalidTournament> {
-    if (min..=MAX_INTEGER).contains(&value) {
-        Ok(())
-    } else {
-        Err(invalid(
-            field,
-            format!("is an integer from {min} to {MAX_INTEGER}"),
-        ))
-    }
-}
-
 /// Dates in order: registration opens ≤ registration closes ≤ first match ≤ finals.
-fn dates_in_order(dates: &Dates) -> Result<(), InvalidTournament> {
+fn dates_in_order(dates: &Dates) -> Result<(), Invalid> {
     let order = [
         ("registration_opens", dates.registration_opens),
         ("registration_closes", dates.registration_closes),
@@ -323,7 +277,7 @@ pub(crate) enum ChangeError {
     /// A status change other than one step forward.
     InvalidTransition(InvalidTransition),
     /// The tournament after the change breaks a rule.
-    Invalid(InvalidTournament),
+    Invalid(Invalid),
 }
 
 impl fmt::Display for ChangeError {
@@ -382,7 +336,7 @@ impl TournamentChanges {
 impl Tournament {
     /// The rules of a tournament, checked at creation and on the state after every change.
     /// Text values are trimmed, and specialties put in the order of [`Specialty`].
-    pub(crate) fn validate(&mut self) -> Result<(), InvalidTournament> {
+    pub(crate) fn validate(&mut self) -> Result<(), Invalid> {
         self.name = required_text("name", &self.name)?;
         self.organizing_club = required_text("organizing_club", &self.organizing_club)?;
         self.venue.name = required_text("venue.name", &self.venue.name)?;
@@ -404,7 +358,7 @@ impl Tournament {
 
     /// At least one court, each name trimmed, not empty and unique within the tournament. The
     /// order stays the organizer's.
-    fn validate_courts(&mut self) -> Result<(), InvalidTournament> {
+    fn validate_courts(&mut self) -> Result<(), Invalid> {
         if self.courts.is_empty() {
             return Err(invalid("courts", "holds at least one court"));
         }
@@ -427,7 +381,7 @@ impl Tournament {
     }
 
     /// At least one specialty, none twice, each with a target score above zero.
-    fn validate_specialties(&mut self) -> Result<(), InvalidTournament> {
+    fn validate_specialties(&mut self) -> Result<(), Invalid> {
         if self.specialties.is_empty() {
             return Err(invalid("specialties", "holds at least one specialty"));
         }
@@ -456,7 +410,7 @@ impl Tournament {
     }
 
     /// Non-negative integers with win > loss >= forfeit.
-    fn validate_points(&self) -> Result<(), InvalidTournament> {
+    fn validate_points(&self) -> Result<(), Invalid> {
         let Points { win, loss, forfeit } = self.points;
         integer("points.win", win, 0)?;
         integer("points.loss", loss, 0)?;
@@ -526,6 +480,89 @@ impl Tournament {
             Err(ChangeError::NotADraftToDelete(self.status))
         }
     }
+
+    /// Whether a change from `self` to `after` can break its series and teams: a specialty
+    /// removed or retargeted, or fewer teams allowed. Only then does the route load
+    /// [`Entries`] for [`Tournament::check_entries`].
+    pub(crate) fn touches_entries(&self, after: &Self) -> bool {
+        self.specialties != after.specialties || after.max_teams < self.max_teams
+    }
+
+    /// Checks the tournament after a change against its series and teams: every series keeps a
+    /// specialty the tournament declares, and `max_teams` stays at least the registered teams.
+    /// It runs after the rules of the merged state, and answers 422 `invalid-request` too: the
+    /// contract of `PATCH /tournaments/:slug` lists no other problem type.
+    pub(crate) fn check_entries(&self, entries: &Entries) -> Result<(), ChangeError> {
+        for (series, specialty) in &entries.series {
+            if !self
+                .specialties
+                .iter()
+                .any(|declared| declared.specialty == *specialty)
+            {
+                return Err(ChangeError::Invalid(invalid(
+                    "specialties",
+                    format!(
+                        "the series {series} plays {}: the tournament keeps it while the series \
+                         does",
+                        specialty.as_str()
+                    ),
+                )));
+            }
+        }
+        let registered = entries.registered_teams;
+        if self.max_teams < registered {
+            return Err(ChangeError::Invalid(invalid(
+                "max_teams",
+                format!(
+                    "{registered} teams are registered, max_teams cannot be below {registered}"
+                ),
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// What the series and teams of a tournament hold, which a change of the tournament must keep
+/// valid.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Entries {
+    /// Each series and the specialty it plays.
+    pub(crate) series: Vec<(Slug, Specialty)>,
+    /// The registered teams of the tournament: withdrawn teams do not count.
+    pub(crate) registered_teams: i64,
+}
+
+/// A valid draft at a fictional club and venue, for the tests of `domain`.
+#[cfg(test)]
+pub(crate) fn example_draft() -> Tournament {
+    Tournament {
+        slug: Slug::parse("open-de-printemps-2027").expect("should be a slug"),
+        name: "Open de printemps".to_owned(),
+        organizing_club: "Club Exemple de Pelote".to_owned(),
+        venue: Venue {
+            name: "Trinquet de l'Exemple".to_owned(),
+            address: "1 place de l'Exemple, Ville-Exemple".to_owned(),
+            latitude: 43.0,
+            longitude: -1.0,
+        },
+        aire: Aire::Trinquet,
+        courts: vec!["Trinquet A".to_owned(), "Trinquet B".to_owned()],
+        specialties: vec![SpecialtyTarget {
+            specialty: Specialty::PaletaGommeCreuse,
+            target_score: 40,
+        }],
+        points: Points::default(),
+        ranking: Ranking::default(),
+        dates: Dates {
+            registration_opens: jiff::civil::date(2027, 3, 1),
+            registration_closes: jiff::civil::date(2027, 3, 31),
+            first_match: jiff::civil::date(2027, 4, 10),
+            finals: jiff::civil::date(2027, 6, 19),
+        },
+        fee_cents: 2000,
+        max_teams: 16,
+        status: Status::Draft,
+    }
 }
 
 #[cfg(test)]
@@ -533,53 +570,26 @@ mod tests {
     use jiff::civil::date;
 
     use super::{
-        Aire, ChangeError, Dates, DatesChanges, InvalidTournament, MAX_INTEGER, Points,
-        PointsChanges, Ranking, Specialty, SpecialtyTarget, Tournament, TournamentChanges, Venue,
-        VenueChanges,
+        Aire, ChangeError, Dates, DatesChanges, Entries, Points, PointsChanges, Ranking, Specialty,
+        SpecialtyTarget, Tournament, TournamentChanges, VenueChanges, example_draft,
     };
+    use crate::domain::rule::{Invalid, MAX_INTEGER};
     use crate::domain::slug::Slug;
     use crate::domain::status::{InvalidTransition, Status};
 
     /// A valid draft at a fictional club and venue.
     fn draft() -> Tournament {
-        Tournament {
-            slug: Slug::parse("open-de-printemps-2027").expect("should be a slug"),
-            name: "Open de printemps".to_owned(),
-            organizing_club: "Club Exemple de Pelote".to_owned(),
-            venue: Venue {
-                name: "Trinquet de l'Exemple".to_owned(),
-                address: "1 place de l'Exemple, Ville-Exemple".to_owned(),
-                latitude: 43.0,
-                longitude: -1.0,
-            },
-            aire: Aire::Trinquet,
-            courts: vec!["Trinquet A".to_owned(), "Trinquet B".to_owned()],
-            specialties: vec![SpecialtyTarget {
-                specialty: Specialty::PaletaGommeCreuse,
-                target_score: 40,
-            }],
-            points: Points::default(),
-            ranking: Ranking::default(),
-            dates: Dates {
-                registration_opens: date(2027, 3, 1),
-                registration_closes: date(2027, 3, 31),
-                first_match: date(2027, 4, 10),
-                finals: date(2027, 6, 19),
-            },
-            fee_cents: 2000,
-            max_teams: 16,
-            status: Status::Draft,
-        }
+        example_draft()
     }
 
     /// The rule a tournament changed by `edit` breaks, if any.
-    fn rule(edit: impl FnOnce(&mut Tournament)) -> Result<Tournament, InvalidTournament> {
+    fn rule(edit: impl FnOnce(&mut Tournament)) -> Result<Tournament, Invalid> {
         let mut tournament = draft();
         edit(&mut tournament);
         tournament.validate().map(|()| tournament)
     }
 
-    fn field_of(result: Result<Tournament, InvalidTournament>) -> Option<&'static str> {
+    fn field_of(result: Result<Tournament, Invalid>) -> Option<&'static str> {
         result.err().map(|error| error.field)
     }
 
@@ -936,7 +946,7 @@ mod tests {
                 }),
                 ..TournamentChanges::default()
             }),
-            Err(ChangeError::Invalid(InvalidTournament {
+            Err(ChangeError::Invalid(Invalid {
                 field: "dates",
                 reason: "finals cannot be before first_match: registration_opens <= \
                          registration_closes <= first_match <= finals"
@@ -1090,12 +1100,98 @@ mod tests {
                     name: Some(String::new()),
                     ..TournamentChanges::default()
                 }),
-                Err(ChangeError::Invalid(InvalidTournament {
-                    field: "name",
+                Err(ChangeError::Invalid(Invalid { field: "name", .. }))
+            ),
+            "then the rules on the merged state"
+        );
+    }
+
+    fn both_specialties() -> Vec<SpecialtyTarget> {
+        vec![
+            SpecialtyTarget {
+                specialty: Specialty::PaletaGommeCreuse,
+                target_score: 40,
+            },
+            SpecialtyTarget {
+                specialty: Specialty::PaletaGommePleine,
+                target_score: 30,
+            },
+        ]
+    }
+
+    #[test]
+    fn only_a_change_of_specialties_or_a_lower_maximum_touches_series_and_teams() {
+        let before = draft();
+        let mut after = draft();
+        after.name = "Autre nom".to_owned();
+        after.max_teams = 24;
+        assert!(
+            !before.touches_entries(&after),
+            "a name and a higher maximum"
+        );
+        after.max_teams = 15;
+        assert!(before.touches_entries(&after), "a lower maximum");
+        let mut after = draft();
+        after.specialties[0].target_score = 35;
+        assert!(before.touches_entries(&after), "a new target score");
+    }
+
+    #[test]
+    fn a_change_keeps_every_series_on_a_declared_specialty() {
+        let pleine_series = Entries {
+            series: vec![(
+                Slug::parse("feminines").expect("should be a slug"),
+                Specialty::PaletaGommePleine,
+            )],
+            registered_teams: 0,
+        };
+        let mut tournament = draft();
+        tournament.specialties = both_specialties();
+        assert_eq!(
+            tournament.check_entries(&pleine_series),
+            Ok(()),
+            "the tournament declares gomme pleine"
+        );
+        assert_eq!(
+            draft()
+                .check_entries(&pleine_series)
+                .map_err(|e| e.to_string()),
+            Err(
+                "specialties: the series feminines plays paleta_gomme_pleine: the tournament \
+                 keeps it while the series does"
+                    .to_owned()
+            ),
+            "gomme pleine removed while a series plays it"
+        );
+        assert!(
+            matches!(
+                draft().check_entries(&pleine_series),
+                Err(ChangeError::Invalid(Invalid {
+                    field: "specialties",
                     ..
                 }))
             ),
-            "then the rules on the merged state"
+            "a 422, as the other rules of the merged state"
+        );
+    }
+
+    #[test]
+    fn a_change_keeps_max_teams_at_least_the_registered_teams() {
+        let registered = |registered_teams| Entries {
+            series: Vec::new(),
+            registered_teams,
+        };
+        assert_eq!(
+            draft().check_entries(&registered(16)),
+            Ok(()),
+            "a full tournament"
+        );
+        assert_eq!(
+            draft()
+                .check_entries(&registered(17))
+                .map_err(|e| e.to_string()),
+            Err("max_teams: 17 teams are registered, max_teams cannot be below 17".to_owned()),
+            "more teams registered than the maximum"
         );
     }
 }

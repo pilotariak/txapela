@@ -45,8 +45,9 @@ export function sha256Hex(text) {
 }
 
 // Starts the Worker. `bindings` adds or replaces bindings; a binding set to undefined is left
-// out, such as the secret in the tests of a Worker without it.
-export function startWorker({ bindings = {} } = {}) {
+// out, such as the secret in the tests of a Worker without it. `logs`, an array, receives every
+// line the Worker logs, as { timestamp, level, message }.
+export function startWorker({ bindings = {}, logs } = {}) {
   const env = Object.fromEntries(
     Object.entries({
       DB: { type: "d1", id: "DB" },
@@ -56,6 +57,7 @@ export function startWorker({ bindings = {} } = {}) {
     }).filter(([, binding]) => binding !== undefined),
   );
   return new Miniflare({
+    ...(logs === undefined ? {} : { handleStructuredLogs: (log) => logs.push(log) }),
     workers: [
       {
         config: {
@@ -165,6 +167,69 @@ export async function createTournament(call, changes = {}) {
   const res = await call("POST", "/tournaments", { token: ORGANIZER_TOKEN, body: tournamentBody(changes) });
   assert.equal(res.status, 201, `tournament created: ${res.status}`);
   return res.json();
+}
+
+// A valid series of the default tournament: gomme creuse, team numbers 100 to 199, with
+// `changes` on top.
+export function seriesBody(changes = {}) {
+  return {
+    slug: "1re-serie-a",
+    name: "1re Série A",
+    specialty: "paleta_gomme_creuse",
+    max_teams: 8,
+    position: 1,
+    number_block: 100,
+    ...changes,
+  };
+}
+
+// Creates a series in a tournament as the organizer, and returns its body.
+export async function createSeries(call, tournament, changes = {}) {
+  const res = await call("POST", `/tournaments/${tournament}/series`, {
+    token: ORGANIZER_TOKEN,
+    body: seriesBody(changes),
+  });
+  assert.equal(res.status, 201, `series created: ${res.status}`);
+  return res.json();
+}
+
+// A fictional player: invented names and club, a made-up licence number, and a contact on
+// example.org, a domain reserved for examples (RFC 2606).
+export function playerBody(firstName, changes = {}) {
+  const key = firstName.toLowerCase();
+  return {
+    first_name: firstName,
+    last_name: "Exemple",
+    club: "Club Exemple de Pelote",
+    licence: `LIC-EXEMPLE-${key.toUpperCase()}`,
+    contact: `${key}.exemple@example.org`,
+    ...changes,
+  };
+}
+
+// A valid team of the first series, with `changes` on top.
+export function teamBody(changes = {}) {
+  return {
+    number: 101,
+    series: "1re-serie-a",
+    players: [playerBody("Ane"), playerBody("Kepa")],
+    ...changes,
+  };
+}
+
+// Registers a team in a tournament as the organizer, and returns its body.
+export async function createTeam(call, tournament, changes = {}) {
+  const res = await call("POST", `/tournaments/${tournament}/teams`, {
+    token: ORGANIZER_TOKEN,
+    body: teamBody(changes),
+  });
+  assert.equal(res.status, 201, `team created: ${res.status}`);
+  return res.json();
+}
+
+// Today in Europe/Paris, YYYY-MM-DD: the registration date txapela gives a team.
+export function parisToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date());
 }
 
 // Moves a tournament one step at a time until it reaches `status`.
