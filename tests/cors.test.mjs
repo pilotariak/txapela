@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { allowedOrigins, assertProblem, startWorker } from "./worker.mjs";
+import { ORGANIZER_TOKEN, allowedOrigins, applyMigrations, assertProblem, startWorker } from "./worker.mjs";
 
 const ORIGIN = "https://kancha.pilotariak.com";
 const DEV_ORIGIN = "http://localhost:8081";
@@ -28,8 +28,9 @@ const CORS_HEADERS = [
 
 let mf;
 
-before(() => {
+before(async () => {
   mf = startWorker();
+  await applyMigrations(await mf.getD1Database("DB"));
 });
 
 after(async () => {
@@ -57,11 +58,11 @@ function assertNoCors(res, why) {
 }
 
 // A preflight as a browser sends it.
-function preflight(path, origin, method = "POST") {
+function preflight(path, origin, method = "POST", requestHeaders = "content-type") {
   return call("OPTIONS", path, {
     Origin: origin,
     "Access-Control-Request-Method": method,
-    "Access-Control-Request-Headers": "content-type",
+    "Access-Control-Request-Headers": requestHeaders,
   });
 }
 
@@ -108,6 +109,16 @@ describe("responses", () => {
 });
 
 describe("problems", () => {
+  test("a 401 of the tournaments API carries the CORS headers", async () => {
+    const res = await call("POST", "/tournaments", { Origin: ORIGIN, Authorization: "Bearer wrong-token" });
+    assertCors(res, ORIGIN);
+    await assertProblem(res, 401, "unauthorized");
+    const ok = await call("GET", "/tournaments", { Origin: ORIGIN, Authorization: `Bearer ${ORGANIZER_TOKEN}` });
+    assertCors(ok, ORIGIN);
+    assert.equal(ok.status, 200, "an organizer read from the website");
+    await ok.body?.cancel();
+  });
+
   test("the router's 404 and 405 carry the CORS headers, so the page can read the problem", async () => {
     const notFound = await call("GET", "/nope", { Origin: ORIGIN });
     assertCors(notFound, ORIGIN);
@@ -126,10 +137,25 @@ describe("preflight", () => {
       assert.equal(await res.text(), "", "a preflight has no body");
       assertCors(res, ORIGIN);
       assert.equal(res.headers.get("access-control-allow-methods"), "GET, POST, PUT, PATCH, DELETE");
-      assert.equal(res.headers.get("access-control-allow-headers"), "Content-Type");
+      assert.equal(res.headers.get("access-control-allow-headers"), "Content-Type, Authorization");
       assert.equal(res.headers.get("access-control-max-age"), "7200");
       assert.equal(res.headers.get("cache-control"), "private, no-store");
       assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+    }
+  });
+
+  test("the tournaments routes allow Authorization, which carries the organizer token", async () => {
+    for (const [path, method] of [
+      ["/tournaments", "GET"],
+      ["/tournaments", "POST"],
+      ["/tournaments/open-2027", "PATCH"],
+      ["/tournaments/open-2027", "DELETE"],
+    ]) {
+      const res = await preflight(path, ORIGIN, method, "authorization, content-type");
+      assert.equal(res.status, 204, `${method} ${path}`);
+      assertCors(res, ORIGIN);
+      assert.match(res.headers.get("access-control-allow-headers") ?? "", /\bAuthorization\b/, "Authorization");
+      assert.match(res.headers.get("access-control-allow-methods") ?? "", new RegExp(`\\b${method}\\b`), method);
     }
   });
 

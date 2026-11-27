@@ -22,8 +22,9 @@ const ALLOWED_ORIGINS: &str = "ALLOWED_ORIGINS";
 const ALLOW_METHODS: &str = "GET, POST, PUT, PATCH, DELETE";
 
 /// The request headers that Kancha sends and that are not CORS-safelisted: `Content-Type:
-/// application/json` is not. A header that Kancha starts sending goes here.
-const ALLOW_HEADERS: &str = "Content-Type";
+/// application/json` is not, and neither is `Authorization`, which carries the organizer token
+/// (`auth.rs`). A header that Kancha starts sending goes here.
+const ALLOW_HEADERS: &str = "Content-Type, Authorization";
 
 /// How long a browser may reuse a preflight, in seconds: two hours, the cap of Chromium.
 const MAX_AGE_SECONDS: &str = "7200";

@@ -6,3 +6,9 @@
 //!
 //! A rule that depends on the time takes it as an argument: the routes of `api` read the Worker's
 //! clock and pass it in. This module uses neither `api` nor `db`.
+
+pub(crate) mod civil;
+pub(crate) mod slug;
+pub(crate) mod status;
+pub(crate) mod token;
+pub(crate) mod tournament;
