@@ -55,7 +55,38 @@ impl fmt::Display for InvalidTransition {
 
 impl std::error::Error for InvalidTransition {}
 
+/// A change to the series or teams of a tournament whose registration is over: its status is
+/// past `registration`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RegistrationClosed(pub(crate) Status);
+
+impl fmt::Display for RegistrationClosed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "status: series and teams change only while the tournament is draft or \
+             registration, not {}",
+            self.0.as_str()
+        )
+    }
+}
+
+impl std::error::Error for RegistrationClosed {}
+
 impl Status {
+    /// The statuses in which series and teams change: the pools are drawn once the tournament
+    /// moves to `pools`, and withdrawals then become forfeits (#8).
+    pub(crate) const REGISTRATION_OPEN: [Self; 2] = [Self::Draft, Self::Registration];
+
+    /// Checks that series and teams can still change: in [`Status::REGISTRATION_OPEN`] only.
+    pub(crate) fn check_registration_open(self) -> Result<(), RegistrationClosed> {
+        if Self::REGISTRATION_OPEN.contains(&self) {
+            Ok(())
+        } else {
+            Err(RegistrationClosed(self))
+        }
+    }
+
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Draft => "draft",
@@ -105,7 +136,7 @@ impl FromStr for Status {
 
 #[cfg(test)]
 mod tests {
-    use super::{InvalidTransition, Status};
+    use super::{InvalidTransition, RegistrationClosed, Status};
 
     const ALL: [Status; 5] = [
         Status::Draft,
@@ -165,6 +196,28 @@ mod tests {
                 .map_err(|e| e.to_string()),
             Err("status: a finished tournament cannot move to draft".to_owned()),
             "the last status"
+        );
+    }
+
+    #[test]
+    fn series_and_teams_change_in_draft_and_registration_only() {
+        for status in ALL {
+            let open = matches!(status, Status::Draft | Status::Registration);
+            assert_eq!(
+                status.check_registration_open(),
+                if open {
+                    Ok(())
+                } else {
+                    Err(RegistrationClosed(status))
+                },
+                "{status:?}"
+            );
+        }
+        assert_eq!(
+            RegistrationClosed(Status::Pools).to_string(),
+            "status: series and teams change only while the tournament is draft or \
+             registration, not pools",
+            "the detail names the status"
         );
     }
 

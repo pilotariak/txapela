@@ -6,7 +6,7 @@
 use serde::Deserialize;
 use worker::{D1Database, D1PreparedStatement, Result};
 
-use super::{Selection, corrupt, int, statement, text};
+use super::{Guard, Selection, corrupt, int, statement, text};
 use crate::domain::slug::Slug;
 use crate::domain::tournament::SpecialtyTarget;
 
@@ -43,35 +43,43 @@ pub(crate) fn select(db: &D1Database, selection: &Selection) -> Result<D1Prepare
 }
 
 /// Inserts the specialties of a tournament, found by its slug, so that these statements run in
-/// the batch that inserts it.
+/// the batch that inserts it, and only while `guard` holds.
 pub(crate) fn insert(
     db: &D1Database,
     slug: &Slug,
     specialties: &[SpecialtyTarget],
+    guard: &Guard,
 ) -> Result<Vec<D1PreparedStatement>> {
+    let (tournament, guard_values) = guard.tournament(slug.as_str());
     specialties
         .iter()
         .map(|specialty| {
+            let mut values = vec![
+                text(specialty.specialty.as_str()),
+                int(specialty.target_score),
+            ];
+            values.extend(guard_values.iter().cloned());
             statement(
                 db,
-                "INSERT INTO tournament_specialties (tournament_id, specialty, target_score) \
-                 VALUES ((SELECT id FROM tournaments WHERE slug = ?), ?, ?)",
-                &[
-                    text(slug.as_str()),
-                    text(specialty.specialty.as_str()),
-                    int(specialty.target_score),
-                ],
+                &format!(
+                    "INSERT INTO tournament_specialties (tournament_id, specialty, target_score) \
+                     SELECT g.id, ?, ? {tournament}"
+                ),
+                &values,
             )
         })
         .collect()
 }
 
-/// Deletes the specialties of a tournament, before [`insert`] writes the new ones.
-pub(crate) fn delete(db: &D1Database, slug: &Slug) -> Result<D1PreparedStatement> {
+/// Deletes the specialties of a tournament, while `guard` holds, before [`insert`] writes the new
+/// ones.
+pub(crate) fn delete(db: &D1Database, slug: &Slug, guard: &Guard) -> Result<D1PreparedStatement> {
+    let (tournament, values) = guard.tournament(slug.as_str());
     statement(
         db,
-        "DELETE FROM tournament_specialties \
-         WHERE tournament_id = (SELECT id FROM tournaments WHERE slug = ?)",
-        &[text(slug.as_str())],
+        &format!(
+            "DELETE FROM tournament_specialties WHERE tournament_id IN (SELECT g.id {tournament})"
+        ),
+        &values,
     )
 }

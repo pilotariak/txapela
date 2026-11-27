@@ -9,6 +9,8 @@ import { after, before, describe, test } from "node:test";
 import {
   ORGANIZER_TOKEN,
   assertProblem,
+  createSeries,
+  createTeam,
   createTournament,
   moveTo,
   startApi,
@@ -744,5 +746,88 @@ describe("draft visibility and status rules", () => {
     );
     const after = await call("GET", path, asOrganizer);
     assert.deepEqual(await after.json(), created, "the stored tournament is unchanged");
+  });
+});
+
+describe("PATCH /tournaments/:slug keeps its series and teams valid", () => {
+  const BOTH = [
+    { specialty: "paleta_gomme_creuse", target_score: 40 },
+    { specialty: "paleta_gomme_pleine", target_score: 30 },
+  ];
+
+  test("a specialty that a series plays cannot be removed: 422, and nothing changes", async () => {
+    const created = await createTournament(call, { slug: slug("in-use"), specialties: BOTH });
+    await createSeries(call, created.slug, { slug: "feminines", specialty: "paleta_gomme_pleine" });
+    const path = `/tournaments/${created.slug}`;
+    await assertInvalid(
+      await call("PATCH", path, { ...asOrganizer, body: { specialties: [BOTH[0]] } }),
+      /^specialties: the series feminines plays paleta_gomme_pleine: the tournament keeps it while the series does$/,
+    );
+    assert.deepEqual(await (await call("GET", path, asOrganizer)).json(), created, "nothing changed");
+    assert.equal(await rows("tournament_specialties", created.slug), 2, "both specialties stay");
+
+    const retargeted = await call("PATCH", path, {
+      ...asOrganizer,
+      body: { specialties: [BOTH[0], { specialty: "paleta_gomme_pleine", target_score: 25 }] },
+    });
+    assert.equal(retargeted.status, 200, "a new target score keeps the specialty");
+    await retargeted.body?.cancel();
+    const series = await call("GET", `${path}/series/feminines`, asOrganizer);
+    assert.equal((await series.json()).target_score, 25, "the series follows the new target");
+
+    const removed = await call("PATCH", path, {
+      ...asOrganizer,
+      body: { specialties: [{ specialty: "paleta_gomme_pleine", target_score: 25 }] },
+    });
+    assert.equal(removed.status, 200, "a specialty no series plays can go");
+    await removed.body?.cancel();
+  });
+
+  test("max_teams cannot go below the registered teams: 422, withdrawn teams do not count", async () => {
+    const created = await createTournament(call, { slug: slug("maximum") });
+    await createSeries(call, created.slug);
+    for (const number of [101, 102, 103]) {
+      await createTeam(call, created.slug, { number });
+    }
+    const path = `/tournaments/${created.slug}`;
+    await moveTo(call, created.slug, "registration");
+    await assertInvalid(
+      await call("PATCH", path, { ...asOrganizer, body: { max_teams: 2 } }),
+      /^max_teams: 3 teams are registered, max_teams cannot be below 3$/,
+    );
+    const withdrawn = await call("PATCH", `${path}/teams/103`, { ...asOrganizer, body: { status: "withdrawn" } });
+    assert.equal(withdrawn.status, 200, "team 103 withdraws");
+    await withdrawn.body?.cancel();
+    const lowered = await call("PATCH", path, { ...asOrganizer, body: { max_teams: 2 } });
+    assert.equal(lowered.status, 200, "two teams registered, two places");
+    assert.equal((await lowered.json()).max_teams, 2);
+  });
+
+  test("the rules of the merged state come before the series and teams", async () => {
+    const created = await createTournament(call, { slug: slug("order"), specialties: BOTH });
+    await createSeries(call, created.slug, { specialty: "paleta_gomme_pleine" });
+    await assertInvalid(
+      await call("PATCH", `/tournaments/${created.slug}`, {
+        ...asOrganizer,
+        body: { specialties: [BOTH[0]], name: " " },
+      }),
+      /^name: cannot be empty$/,
+    );
+  });
+
+  test("DELETE of a draft deletes its series, teams and players", async () => {
+    const created = await createTournament(call, { slug: slug("cascade") });
+    await createSeries(call, created.slug);
+    await createTeam(call, created.slug);
+    const id = (await db.prepare("SELECT id FROM tournaments WHERE slug = ?").bind(created.slug).first()).id;
+    assert.equal((await call("DELETE", `/tournaments/${created.slug}`, asOrganizer)).status, 204);
+    const left = await db
+      .prepare(
+        "SELECT (SELECT count(*) FROM series WHERE tournament_id = ?) + (SELECT count(*) FROM teams WHERE tournament_id = ?) + " +
+          "(SELECT count(*) FROM players WHERE team_id NOT IN (SELECT id FROM teams)) AS n",
+      )
+      .bind(id, id)
+      .first();
+    assert.equal(left.n, 0, "no series, team or player left");
   });
 });

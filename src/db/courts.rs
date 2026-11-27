@@ -6,7 +6,7 @@
 use serde::Deserialize;
 use worker::{D1Database, D1PreparedStatement, Result};
 
-use super::{Selection, int, statement, text};
+use super::{Guard, Selection, int, statement, text};
 use crate::domain::slug::Slug;
 
 /// A court and the slug of its tournament.
@@ -27,31 +27,38 @@ pub(crate) fn select(db: &D1Database, selection: &Selection) -> Result<D1Prepare
 }
 
 /// Inserts the courts of a tournament, in order. The tournament is found by its slug, so that
-/// these statements run in the batch that inserts it.
+/// these statements run in the batch that inserts it, and only while `guard` holds.
 pub(crate) fn insert(
     db: &D1Database,
     slug: &Slug,
     courts: &[String],
+    guard: &Guard,
 ) -> Result<Vec<D1PreparedStatement>> {
+    let (tournament, guard_values) = guard.tournament(slug.as_str());
     courts
         .iter()
         .zip(1_i64..)
         .map(|(name, position)| {
+            let mut values = vec![int(position), text(name)];
+            values.extend(guard_values.iter().cloned());
             statement(
                 db,
-                "INSERT INTO courts (tournament_id, position, name) \
-                 VALUES ((SELECT id FROM tournaments WHERE slug = ?), ?, ?)",
-                &[text(slug.as_str()), int(position), text(name)],
+                &format!(
+                    "INSERT INTO courts (tournament_id, position, name) SELECT g.id, ?, ? {tournament}"
+                ),
+                &values,
             )
         })
         .collect()
 }
 
-/// Deletes the courts of a tournament, before [`insert`] writes the new ones.
-pub(crate) fn delete(db: &D1Database, slug: &Slug) -> Result<D1PreparedStatement> {
+/// Deletes the courts of a tournament, while `guard` holds, before [`insert`] writes the new
+/// ones.
+pub(crate) fn delete(db: &D1Database, slug: &Slug, guard: &Guard) -> Result<D1PreparedStatement> {
+    let (tournament, values) = guard.tournament(slug.as_str());
     statement(
         db,
-        "DELETE FROM courts WHERE tournament_id = (SELECT id FROM tournaments WHERE slug = ?)",
-        &[text(slug.as_str())],
+        &format!("DELETE FROM courts WHERE tournament_id IN (SELECT g.id {tournament})"),
+        &values,
     )
 }

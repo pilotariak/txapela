@@ -14,8 +14,11 @@
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
-use super::problem::responses::{Conflict, NotFound, Unauthorized, Unprocessable};
-use super::problem::{ProblemDocument, ProblemType};
+use super::problem::responses::{
+    Conflict, ExtensibleProblemDocument, NotFound, SeriesAndTeamsConflict, Unauthorized,
+    Unprocessable,
+};
+use super::problem::{ExtensibleProblemType, ProblemDocument, ProblemType};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -25,10 +28,11 @@ use super::problem::{ProblemDocument, ProblemType};
         // release-please bumps on every release.
         version = "1",
         description = "Pelota tournaments run by a club. Paths are under /api/v1. Organizers \
-            write with a bearer token; reads are public, and a draft tournament is seen only \
-            with the organizer token. Errors are RFC 9457 problem details with a stable type. \
-            Dates are civil dates YYYY-MM-DD in Europe/Paris. Every API response sends \
-            Cache-Control: private, no-store.",
+            write with a bearer token; reads are public, and a draft tournament, with its series \
+            and teams, is seen only with the organizer token. The licence numbers and contacts \
+            of players are for the organizer only. Errors are RFC 9457 problem details with a \
+            stable type. Dates are civil dates YYYY-MM-DD in Europe/Paris. Every API response \
+            sends Cache-Control: private, no-store.",
         license(name = "Apache-2.0", identifier = "Apache-2.0"),
     ),
     servers((url = "https://txapela.pilotariak.com")),
@@ -39,15 +43,39 @@ use super::problem::{ProblemDocument, ProblemType};
         super::tournaments::get,
         super::tournaments::update,
         super::tournaments::delete,
+        super::series::list,
+        super::series::create,
+        super::series::get,
+        super::series::update,
+        super::series::delete,
+        super::teams::list,
+        super::teams::create,
+        super::teams::get,
+        super::teams::update,
+        super::teams::delete,
     ),
     components(
-        schemas(ProblemDocument, ProblemType),
-        responses(Unauthorized, NotFound, Conflict, Unprocessable),
+        schemas(
+            ProblemDocument,
+            ProblemType,
+            ExtensibleProblemDocument,
+            ExtensibleProblemType
+        ),
+        responses(
+            Unauthorized,
+            NotFound,
+            Conflict,
+            Unprocessable,
+            SeriesAndTeamsConflict
+        ),
     ),
     modifiers(&SecuritySchemes),
     tags(
         (name = "health", description = "Liveness"),
         (name = "tournaments", description = "Create, read, change and delete tournaments"),
+        (name = "series", description = "The series of a tournament: one specialty at one level, \
+            with a block of team numbers"),
+        (name = "teams", description = "The teams that the organizer registers, two players each"),
     ),
 )]
 struct ApiDoc;
@@ -87,6 +115,7 @@ mod tests {
     use std::fs;
 
     use super::document;
+    use crate::api::problem::{FROZEN, ProblemType};
 
     const PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/openapi.json");
 
@@ -120,8 +149,8 @@ mod tests {
             .map(|path| path.as_object().expect("should be an object").len())
             .sum();
         assert_eq!(
-            operations, 6,
-            "the health route and the 5 routes of the tournaments API"
+            operations, 16,
+            "the health route and the 5 routes of each of tournaments, series and teams"
         );
     }
 
@@ -137,6 +166,12 @@ mod tests {
             ("/api/v1/tournaments", "post"),
             ("/api/v1/tournaments/{slug}", "patch"),
             ("/api/v1/tournaments/{slug}", "delete"),
+            ("/api/v1/tournaments/{slug}/series", "post"),
+            ("/api/v1/tournaments/{slug}/series/{series}", "patch"),
+            ("/api/v1/tournaments/{slug}/series/{series}", "delete"),
+            ("/api/v1/tournaments/{slug}/teams", "post"),
+            ("/api/v1/tournaments/{slug}/teams/{number}", "patch"),
+            ("/api/v1/tournaments/{slug}/teams/{number}", "delete"),
         ] {
             assert_eq!(
                 security(path, method),
@@ -147,12 +182,60 @@ mod tests {
         for (path, method) in [
             ("/api/v1/tournaments", "get"),
             ("/api/v1/tournaments/{slug}", "get"),
+            ("/api/v1/tournaments/{slug}/series", "get"),
+            ("/api/v1/tournaments/{slug}/series/{series}", "get"),
+            ("/api/v1/tournaments/{slug}/teams", "get"),
+            ("/api/v1/tournaments/{slug}/teams/{number}", "get"),
         ] {
             assert_eq!(
                 security(path, method),
                 optional,
                 "{method} {path} is public, the token shows drafts"
             );
+        }
+    }
+
+    #[test]
+    fn the_tournaments_routes_keep_a_closed_list_and_the_newer_ones_an_open_one() {
+        let document: serde_json::Value =
+            serde_json::from_str(&document()).expect("should be JSON");
+        let schemas = &document["components"]["schemas"];
+        let frozen: Vec<&str> = FROZEN.iter().map(|kind| kind.uri()).collect();
+        assert_eq!(
+            schemas["ProblemType"]["enum"],
+            serde_json::json!(frozen),
+            "the closed enum of the tournaments routes never grows"
+        );
+        let all: Vec<&str> = ProblemType::ALL.iter().map(|kind| kind.uri()).collect();
+        assert_eq!(
+            schemas["ExtensibleProblemType"]["x-extensible-enum"],
+            serde_json::json!(all),
+            "every type, as an extensible enum"
+        );
+        assert!(
+            schemas["ExtensibleProblemType"].get("enum").is_none(),
+            "no closed enum: a new type stays additive"
+        );
+        assert_eq!(
+            schemas["ExtensibleProblemDocument"]["properties"]["type"]["$ref"],
+            "#/components/schemas/ExtensibleProblemType",
+            "the document of the newer routes refers to the open list"
+        );
+        for (path, item) in document["paths"].as_object().expect("should have paths") {
+            for (method, operation) in item.as_object().expect("should be an object") {
+                let conflict = operation["responses"]["409"]["$ref"].as_str();
+                if path.contains("/series") || path.contains("/teams") {
+                    assert!(
+                        conflict.is_none_or(|r| r.ends_with("/SeriesAndTeamsConflict")),
+                        "{method} {path}: its 409 lists the open types"
+                    );
+                } else {
+                    assert!(
+                        conflict.is_none_or(|r| r.ends_with("/Conflict")),
+                        "{method} {path}: its 409 keeps the closed types"
+                    );
+                }
+            }
         }
     }
 }
