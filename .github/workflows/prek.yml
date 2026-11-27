@@ -20,9 +20,29 @@ jobs:
     permissions:
       contents: read
     steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+      with:
+        egress-policy: audit
+
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+
+    # hawkeye and taplo are `language: system` hooks: install their release binaries, the
+    # versions of pik. taplo is the taplo-cli crate. hawkeye has no install-action manifest: the
+    # action falls back to cargo-binstall, which looks for its release binary, else builds it
+    # from source.
+    - name: Install hawkeye and taplo
+      uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+      with:
+        tool: hawkeye@7.1.0,taplo@0.10.0
+
+    # The Rust hooks need the toolchain and a build, and the runner image has no cargo-audit:
+    # ci.yml runs the same checks (cargo fmt --check, clippy on wasm32, cargo test, and cargo
+    # deny, which reads the RustSec advisories that cargo audit reads).
     - name: Run prek
       uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d # v3.1.0
+      with:
+        extra-args: --all-files --skip fmt --skip cargo-check --skip clippy --skip cargo-audit
