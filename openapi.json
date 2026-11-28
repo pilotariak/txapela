@@ -43,6 +43,30 @@
         ]
       }
     },
+    "/api/v1/openapi.json": {
+      "get": {
+        "tags": [
+          "contract"
+        ],
+        "summary": "Answers this document, the contract that clients generate their types from. Needs no token.",
+        "operationId": "getContract",
+        "responses": {
+          "200": {
+            "description": "The OpenAPI 3.1 document of the API, this one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/api/v1/tournaments": {
       "get": {
         "tags": [
@@ -2798,6 +2822,10 @@
     {
       "name": "health",
       "description": "Liveness"
+    },
+    {
+      "name": "contract",
+      "description": "This OpenAPI document, served as committed"
     },
     {
       "name": "tournaments",
