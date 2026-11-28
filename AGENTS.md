@@ -22,33 +22,51 @@ txapela/
 │   │                       # response needs
 │   ├── api/
 │   │   ├── mod.rs          # routes(): the /api/v1 prefix (v1! macro), finish(): problem 404/405, Cache-Control, CORS;
-│   │   │                   # body reading (size, JSON, no null, no value quoted), the :slug, :series and :number
-│   │   │                   # parameters
+│   │   │                   # body reading (size, JSON, no null, no value quoted), the :slug, :series, :number,
+│   │   │                   # :pool and :match parameters; ATTEMPTS of a write of the pools
 │   │   ├── health.rs       # GET /api/v1/health
 │   │   ├── tournaments.rs  # GET|POST /tournaments, GET|PATCH|DELETE /tournaments/:slug
 │   │   ├── series.rs       # GET|POST /tournaments/:slug/series, GET|PATCH|DELETE /tournaments/:slug/series/:series
 │   │   ├── teams.rs        # GET|POST /tournaments/:slug/teams, GET|PATCH|DELETE /tournaments/:slug/teams/:number;
 │   │   │                   # the public and organizer views of a player
+│   │   ├── pools.rs        # POST …/series/:series/draw, GET …/series/:series/pools, POST …/pools/:pool/teams (move);
+│   │   │                   # the public view of a team in a pool, a match or a standings line
+│   │   ├── matches.rs      # GET …/series/:series/matches, GET …/pools/:pool/matches/:match, PUT …/:match/result;
+│   │   │                   # the extensible phase and state of a match
+│   │   ├── standings.rs    # GET …/series/:series/standings, PUT …/pools/:pool/tiebreak
 │   │   ├── auth.rs         # Interim organizer check: Bearer token vs the ORGANIZER_TOKEN_SHA256 secret
 │   │   ├── cors.rs         # ALLOWED_ORIGINS, the preflight, the CORS headers of /api/ responses
 │   │   ├── problem.rs      # RFC 9457 errors, one stable type per error; the closed and extensible type lists
 │   │   └── openapi.rs      # cfg(test) only: builds openapi.json and checks it is up to date
 │   ├── db/
-│   │   ├── mod.rs          # Parameter binding (numbers, text, dates, booleans), batch, the Selection a read loads
+│   │   ├── mod.rs          # Parameter binding (numbers, text, dates, booleans, JSON rows), batch, the Selection a
+│   │   │                   # read loads, written and written_last
 │   │   ├── tournaments.rs  # tournaments, and a whole tournament read or written with its courts and specialties
 │   │   ├── courts.rs       # courts
 │   │   ├── tournament_specialties.rs # tournament_specialties
 │   │   ├── series.rs       # series, the teams of a series, what a tournament change must keep
-│   │   ├── teams.rs        # teams, and a whole team read or written with its players; the registered teams
-│   │   └── players.rs      # players
+│   │   ├── teams.rs        # teams, and a whole team read or written with its players; the registered teams; the
+│   │   │                   # entrants of a draw
+│   │   ├── players.rs      # players; their public fields only for the pools, matches and standings
+│   │   ├── pools.rs        # pools, the guard of a write of the pools, the pools of a series read with their teams,
+│   │   │                   # players and matches, a draw and a move written in one batch
+│   │   ├── pool_teams.rs   # pool_teams: the teams of a pool, a move, the tiebreak
+│   │   └── matches.rs      # matches: the matches of the pools, a result
 │   ├── domain/
 │   │   ├── mod.rs          # Pure logic and types, no worker import: unit tests run by cargo test on the host
 │   │   ├── rule.rs         # A broken rule (422) and the checks shared by every resource: text, integers
 │   │   ├── tournament.rs   # Aire, Specialty, Ranking, the rules of a tournament and of a change
-│   │   ├── status.rs       # draft → registration → pools → finals → finished, one step forward; registration open
+│   │   ├── status.rs       # draft → registration → pools → finals → finished, one step forward; registration open;
+│   │   │                   # pools
 │   │   ├── series.rs       # A series: its specialty, maximum, position and number block, and the rules of a change
 │   │   ├── team.rs         # A team: number, players, registration date, fee, status, and the maximums
 │   │   ├── player.rs       # The two players of a team; licence and contact are organizer only
+│   │   ├── draw.rs         # The draw: seed order, pools of 4 to 6, snake order, the same-club rule
+│   │   ├── pool.rs         # A pool named A to Z, its teams and matches, the revision, a move, a tiebreak
+│   │   ├── round_robin.rs  # The circle method, with a bye per round for an odd number of teams
+│   │   ├── matches.rs      # A match: phase, pool, number, round, teams, state and score
+│   │   ├── score.rs        # A result: the teams of the match, a valid score, a forfeit as the target score to 0
+│   │   ├── standings.rs    # The standings of a pool, computed from its matches: points, goal average, tiebreak
 │   │   ├── slug.rs         # The public key of a tournament, and of a series within it
 │   │   ├── civil.rs        # YYYY-MM-DD civil dates, the date in Europe/Paris of an instant
 │   │   └── token.rs        # SHA-256 of the organizer token, constant-time comparison
@@ -62,7 +80,7 @@ txapela/
 ├── tests/
 │   ├── worker.mjs          # Starts build/ in Miniflare with the bindings of wrangler.toml and the test organizer
 │   │                       # token's hash, optionally capturing its logs; applies the migrations; request helper;
-│   │                       # tournament, series, team and player fixtures
+│   │                       # tournament, series, team and player fixtures; a drawn tournament, a result
 │   ├── health.test.mjs     # Worker tests, run with node:test: health route and security headers
 │   ├── problem.test.mjs    # 404 and 405 problems under /api/
 │   ├── cors.test.mjs       # CORS of the API
@@ -70,6 +88,9 @@ txapela/
 │   ├── tournaments.test.mjs # Each tournament route, its rules and its problems
 │   ├── series.test.mjs     # Each series route, its rules and its problems
 │   ├── teams.test.mjs      # Each team route, its rules, its problems, and the public view of a team
+│   ├── pools.test.mjs      # The draw, the pools and a move: rules, order of checks, concurrent draws, moves, results
+│   ├── matches.test.mjs    # The matches and their results: scores, forfeits, corrections, results against finals
+│   ├── standings.test.mjs  # The standings, forfeits and corrections, the tiebreak, tiebreaks against moves
 │   ├── privacy.test.mjs    # No licence or contact in a public response, a problem detail or a log line
 │   ├── auth.test.mjs       # The organizer check, including a Worker without the secret
 │   └── database.test.mjs   # D1 binding, migrations, tables, foreign keys and the cascade on delete
@@ -100,11 +121,13 @@ nothing needs `pub`. New code goes here:
   carries no schema code. Write a `#[schema(...)]` field attribute as `#[cfg_attr(test, schema(...))]` too, and give
   an `Option` field of a request `nullable = false`: the API answers 422 to a `null`.
 - **`db/`**: D1 queries, one file per table, returning `domain` types. No INTEGER PRIMARY KEY leaves D1: statements
-  find a tournament by its slug, a series by the slug of its tournament and its own, and a team by the slug of its
-  tournament and its number. Child rows are inserted with `(SELECT id FROM tournaments WHERE slug = ?)` (or the same
-  for a team) in the batch that inserts their parent.
+  find a tournament by its slug, a series by the slug of its tournament and its own, a team by the slug of its
+  tournament and its number, a pool by its series and its number, and a match by its pool and its number. Child rows
+  are inserted with `(SELECT id FROM tournaments WHERE slug = ?)` (or the same for a team) in the batch that inserts
+  their parent.
 - **`domain/`**: pure logic and types: the rules of a tournament, a series, a team and its players, the status
-  transitions, slugs, civil dates and the organizer token's hash. `rule.rs` holds the shape of a broken rule and the
+  transitions, slugs, civil dates, the organizer token's hash, the draw, the round robin, results and standings. It
+  reads no randomness either: a draw is the same for the same teams. `rule.rs` holds the shape of a broken rule and the
   checks every resource shares. It never imports `worker`, so `cargo test` runs it on the host. It reads no clock: the
   routes read the Worker's clock (`worker::Date::now()`) and pass the time in, as the registration date of a team.
 - **`web/`**: the public pages outside `/api/`.
@@ -123,28 +146,36 @@ Every API route lives under `/api/v1/`. Installed app versions stay in use for m
 `/api/v2/` while `/api/v1/` keeps working. Only the landing page lives outside `/api/`. The workers-rs `Router` answers
 405 to any other method on a registered path, except a CORS preflight, answered before it.
 
-| Method   | Path                                       | Who       | Description                                                                      |
-| -------- | ------------------------------------------ | --------- | -------------------------------------------------------------------------------- |
-| `GET`    | `/`                                        | public    | Landing page (HTML): what txapela is, live status                                |
-| `GET`    | `/api/v1/health`                           | public    | Liveness check: `{"status":"ok"}`                                                |
-| `GET`    | `/api/v1/tournaments`                      | public    | Tournaments by first match date, then slug; drafts with the organizer token only |
-| `POST`   | `/api/v1/tournaments`                      | organizer | Create a tournament, as a draft: 201, `Location`, the tournament                 |
-| `GET`    | `/api/v1/tournaments/:slug`                | public    | A tournament; a draft answers 404 without the organizer token                    |
-| `PATCH`  | `/api/v1/tournaments/:slug`                | organizer | Change a tournament: partial body, checked on the merged state                   |
-| `DELETE` | `/api/v1/tournaments/:slug`                | organizer | Delete a draft with its courts, specialties, series, teams and players: 204      |
-| `GET`    | `/api/v1/tournaments/:slug/series`         | public    | Series by position, then slug; 404 for a draft without the organizer token       |
-| `POST`   | `/api/v1/tournaments/:slug/series`         | organizer | Create a series, in draft or registration: 201, `Location`, the series           |
-| `GET`    | `/api/v1/tournaments/:slug/series/:series` | public    | A series, with the target score of its specialty                                 |
-| `PATCH`  | `/api/v1/tournaments/:slug/series/:series` | organizer | Change a series: partial body, checked on the merged state and its teams         |
-| `DELETE` | `/api/v1/tournaments/:slug/series/:series` | organizer | Delete a series without teams, in draft or registration: 204                     |
-| `GET`    | `/api/v1/tournaments/:slug/teams`          | public    | Teams by number; licences, contacts, dates and fees for the organizer only       |
-| `POST`   | `/api/v1/tournaments/:slug/teams`          | organizer | Register a team, in draft or registration: 201, `Location`, the team             |
-| `GET`    | `/api/v1/tournaments/:slug/teams/:number`  | public    | A team, in the same two views                                                    |
-| `PATCH`  | `/api/v1/tournaments/:slug/teams/:number`  | organizer | Change the players, fee or status of a team                                      |
-| `DELETE` | `/api/v1/tournaments/:slug/teams/:number`  | organizer | Delete a team with its players, in draft or registration: 204                    |
+| Method   | Path                                                                         | Who       | Description                                                                              |
+| -------- | ---------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `GET`    | `/`                                                                          | public    | Landing page (HTML): what txapela is, live status                                        |
+| `GET`    | `/api/v1/health`                                                             | public    | Liveness check: `{"status":"ok"}`                                                        |
+| `GET`    | `/api/v1/tournaments`                                                        | public    | Tournaments by first match date, then slug; drafts with the organizer token only         |
+| `POST`   | `/api/v1/tournaments`                                                        | organizer | Create a tournament, as a draft: 201, `Location`, the tournament                         |
+| `GET`    | `/api/v1/tournaments/:slug`                                                  | public    | A tournament; a draft answers 404 without the organizer token                            |
+| `PATCH`  | `/api/v1/tournaments/:slug`                                                  | organizer | Change a tournament: partial body, checked on the merged state                           |
+| `DELETE` | `/api/v1/tournaments/:slug`                                                  | organizer | Delete a draft with its courts, specialties, series, teams and players: 204              |
+| `GET`    | `/api/v1/tournaments/:slug/series`                                           | public    | Series by position, then slug; 404 for a draft without the organizer token               |
+| `POST`   | `/api/v1/tournaments/:slug/series`                                           | organizer | Create a series, in draft or registration: 201, `Location`, the series                   |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series`                                   | public    | A series, with the target score of its specialty                                         |
+| `PATCH`  | `/api/v1/tournaments/:slug/series/:series`                                   | organizer | Change a series: partial body, checked on the merged state and its teams                 |
+| `DELETE` | `/api/v1/tournaments/:slug/series/:series`                                   | organizer | Delete a series without teams, in draft or registration: 204                             |
+| `GET`    | `/api/v1/tournaments/:slug/teams`                                            | public    | Teams by number; licences, contacts, dates and fees for the organizer only               |
+| `POST`   | `/api/v1/tournaments/:slug/teams`                                            | organizer | Register a team, in draft or registration: 201, `Location`, the team                     |
+| `GET`    | `/api/v1/tournaments/:slug/teams/:number`                                    | public    | A team, in the same two views                                                            |
+| `PATCH`  | `/api/v1/tournaments/:slug/teams/:number`                                    | organizer | Change the players, fee or status of a team                                              |
+| `DELETE` | `/api/v1/tournaments/:slug/teams/:number`                                    | organizer | Delete a team with its players, in draft or registration: 204                            |
+| `POST`   | `/api/v1/tournaments/:slug/series/:series/draw`                              | organizer | Draw the pools of a series, in pools, until its first result: 201, `Location`, the pools |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/pools`                             | public    | Pools by name, their teams in seed order; empty until the draw                           |
+| `POST`   | `/api/v1/tournaments/:slug/series/:series/pools/:pool/teams`                 | organizer | Move a team into the pool, until the first result: the pools                             |
+| `PUT`    | `/api/v1/tournaments/:slug/series/:series/pools/:pool/tiebreak`              | organizer | Order the teams of a pool, for teams level on points and goal average                    |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/matches`                           | public    | Matches by pool, then number; empty until the draw                                       |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/pools/:pool/matches/:match`        | public    | A match, its teams, state and score                                                      |
+| `PUT`    | `/api/v1/tournaments/:slug/series/:series/pools/:pool/matches/:match/result` | organizer | Record or correct the result of a match, in pools: the match                             |
+| `GET`    | `/api/v1/tournaments/:slug/series/:series/standings`                         | public    | The standings of each pool, computed from its matches                                    |
 
 `openapi.json` describes every route, its bodies and errors. The next resources come with the next issues
-([#8](https://github.com/pilotariak/txapela/issues/8) to [#11](https://github.com/pilotariak/txapela/issues/11)), and
+([#9](https://github.com/pilotariak/txapela/issues/9) to [#11](https://github.com/pilotariak/txapela/issues/11)), and
 how organizers and players authenticate is still open ([#5](https://github.com/pilotariak/txapela/issues/5)): until
 then, the organizer enters every registration.
 
@@ -157,12 +188,13 @@ then, the organizer enters every registration.
   account, no organizers table, no per-tournament ownership. Never log a token or its hash. The maintainer sets the
   secret with `wrangler secret put ORGANIZER_TOKEN_SHA256`; for `make dev`, see Running Locally.
 - **Reads** (`auth::viewer`): without `Authorization`, the public view, without drafts; with the organizer token,
-  drafts included; with any other `Authorization`, 401, so that an organizer with a wrong token is told so. The series
-  and teams of a draft answer 404 without the token, like the draft.
-- **Order of checks**: 401, then 404 (unknown slug, series or team number, or a draft without the token: the same
-  problem), then the body (422), then the rules of `domain`: the status first (409 `not-a-draft`,
-  `invalid-transition` or `registration-closed`), then 422 on the merged state, then the other rows (409
-  `slug-taken`, `block-taken`, `number-taken`, `series-full`, `tournament-full`, `series-has-teams`).
+  drafts included; with any other `Authorization`, 401, so that an organizer with a wrong token is told so. The series,
+  teams, pools, matches and standings of a draft answer 404 without the token, like the draft.
+- **Order of checks**: 401, then 404 (unknown slug, series, team number, pool or match, or a draft without the token:
+  the same problem), then the body (422), then the rules of `domain`: the status first (409 `not-a-draft`,
+  `invalid-transition`, `registration-closed` or `not-in-pools`), then 422 on the merged state, then the other rows
+  (409 `slug-taken`, `block-taken`, `number-taken`, `series-full`, `tournament-full`, `series-has-teams`,
+  `series-has-results`).
 - **Slug**: chosen at creation, immutable (a `PATCH` with `slug` answers 422): 3 to 64 characters among a-z, 0-9 and
   single hyphens, starting and ending with a letter or a digit. A duplicate answers 409 `slug-taken`. A path that
   cannot be a slug answers 404. A series has a slug of the same form, unique within its tournament: its public key in
@@ -193,14 +225,56 @@ then, the organizer enters every registration.
   requests never take a place twice. The writes of a series (open registration, declared specialty, maximum at
   least the registered teams, no team under a moving block) and a tournament `PATCH` that touches its series and
   teams are guarded the same way (see Guarded writes).
+- **Pools**: drawn, changed and played while the tournament is `pools` only (409 `not-in-pools` before and after):
+  registration is closed by then, so the teams of a draw are fixed, and the final phase (#10) starts from standings
+  that no longer change. A pool is named by a letter, its public key within the series: A, B, C…, up to Z, stored as
+  its number from 1. Frontis's `pool` (an `Int` that starts again in each `poolPhase`) is that number: pool A is
+  Frontis's pool 1, and a series plays a single pool phase (Frontis's `poolPhase` null). A path that is not one
+  uppercase letter answers 404.
+- **Draw** (`POST …/series/:series/draw`): the registered teams of the series, withdrawn ones left out; at least 4
+  (422). The body gives exactly one of `pool_size` (4, 5 or 6: the largest pool, in as few pools as it allows) or
+  `pools` (1 to 26); every pool then holds 4 to 6 teams and pools differ by one team at most (422 otherwise). The
+  seed order is the optional `seeds` list of team numbers (registered teams of the series, none twice, 422
+  otherwise), then the other teams by number: teams have no seed column. Pots of one team per pool fill the pools in
+  snake order (A, B, C, then C, B, A…); within a pot, a team takes another pool of the pot when its own already holds
+  a team of its club, and the draw keeps the most teams away from their clubs that it can (a maximum matching, each
+  team trying its snake pool first). A team's clubs are the clubs of its players, trimmed and compared without case;
+  two teams share a club when one of their players does. The draw generates the matches of every pool. A series is
+  drawn again while it has no result, played or forfeit (409 `series-has-results` after): the new draw replaces the
+  pools, their matches and their tiebreak. 201 with `Location: …/pools`.
+- **Move** (`POST …/pools/:pool/teams {"number": …}`): a team of another pool joins this one, keeping its seed, until
+  the first result of the series (409 `series-has-results`). A move leaves 3 to 7 teams in each pool (422 otherwise):
+  one more or less than a draw, so that two teams swap in two moves. It generates again the matches of both pools in
+  the batch that moves the team, and removes their tiebreak. A team already in the pool stays: 200, nothing changes.
+- **Matches**: every team of a pool against every other one once, by the circle method over the seed order; a pool
+  with an odd number of teams gets a bye each round, and each team rests once. A match has a `phase` (`pool`, as
+  Frontis names it; the final phase comes with #10), its pool, a number within the pool from 1 (its public key with the
+  pool, in `…/pools/:pool/matches/:match`, a path of decimal digits without a leading zero), a round, its two teams
+  (the better seed first), a `state` (`scheduled`, `played`, `forfeit`, `postponed`) and, with a result, its score.
+  `phase` and `state` are `x-extensible-enum` lists in the contract: #9 sets `postponed` and #10 adds phases. The slot
+  of a match (date, time, court) comes with the calendar (#9).
+- **Results** (`PUT …/matches/:match/result`): recorded and corrected (recorded again) while the tournament is `pools`.
+  The body names the two teams of the match in either order (`teams`, 422 for another pair) and gives exactly one of
+  `score` (in the order of `teams`) or `forfeited_by` (a team of the match). A score is valid when one team reaches
+  exactly the target score of the series and the other stays from 0 below it (422). A forfeit records the target
+  score to 0 for the other team, never 0–0, and it counts in the goal average; the team that forfeits gets the forfeit
+  points of the tournament, the other team the win points. Pools, matches and standings show the public view of a
+  team to every caller, the organizer included: its number and its players' names and clubs.
+- **Standings** (`GET …/standings`): computed from the matches on every read, never stored, so a corrected score
+  updates them. Played (results, forfeits included), wins, losses (forfeits included), forfeits, points, goals for,
+  goals against, goal average (for minus against) and rank: by points, then goal average; teams still level share
+  their rank (1, 2, 2, 4), by number. The organizer's tiebreak (`PUT …/pools/:pool/tiebreak {"teams": […]}`, every
+  team of the pool once, or none to remove it, 422 otherwise) is the last sort key: it separates teams level on
+  points and goal average, and only them.
 - **Status**: `draft` → `registration` → `pools` → `finals` → `finished`, one step forward only, through
   `PATCH {"status": ...}`; any other value, the current one included, answers 409 `invalid-transition`. A new
   tournament is a draft. A draft is never public.
 - **Registration open**: while the tournament is `draft` or `registration`, the organizer creates and deletes series
   and teams, changes the specialty, maximum and block of a series, and withdraws a team or registers it again (when
   its series and tournament have room). From `pools` on, these answer 409 `registration-closed`, even with the
-  current value: withdrawing then is a forfeit, left to the pools (#8). The name and position of a series, and the
-  players and fee of a team, stay editable in every status.
+  current value: a team that withdraws then stays in its pool, with its status `registered`, and the organizer
+  records each of its remaining matches as a forfeit. The name and position of a series, and the players and fee of a
+  team, stay editable in every status.
 - **PATCH**: absent fields keep their value, nested objects (`venue`, `points`, `dates`) included; `courts` and
   `specialties` are replaced whole. No field takes `null` (422). Aire, specialties, points, ranking and courts change
   only while the status before the patch is `draft`: once present in the body, even with their current value, they
@@ -210,8 +284,8 @@ then, the organizer enters every registration.
   `max_teams` goes down. A series `PATCH` cannot set `max_teams` below its registered teams (409 `series-full`) nor
   move the block of a series that has teams, withdrawn ones included (409 `series-has-teams`). A team `PATCH`
   replaces both players.
-- **DELETE**: a tournament in draft only, otherwise 409 `not-a-draft`; its courts, specialties, series, teams and
-  players go with it (ON DELETE CASCADE). A series without teams only (409 `series-has-teams`; the foreign key of
+- **DELETE**: a tournament in draft only, otherwise 409 `not-a-draft`; its courts, specialties, series, teams,
+  players, pools and matches go with it (ON DELETE CASCADE). A series without teams only (409 `series-has-teams`; the foreign key of
   `teams` refuses it too). A team with its players.
 - **Errors** are `application/problem+json` (RFC 9457) with a stable `type`,
   `https://txapela.pilotariak.com/problems/<name>`: the list is the `ProblemType` enum of `problem.rs`. Never rename
@@ -220,22 +294,24 @@ then, the organizer enters every registration.
   messages, and names an unknown field or variant only when it looks like a name of the API (a letter, then
   letters, digits or underscores), never an email address or a phone number.
 
-  | Type                  | Status | When                                                                                    |
-  | --------------------- | ------ | --------------------------------------------------------------------------------------- |
-  | `unauthorized`        | 401    | No organizer token, a malformed or wrong one, or no valid secret                        |
-  | `not-found`           | 404    | Unknown path under `/api/`, unknown slug, series or team, or a draft without the token  |
-  | `method-not-allowed`  | 405    | Another method on a known path                                                          |
-  | `slug-taken`          | 409    | Another tournament has this slug, or another series of the tournament                   |
-  | `not-a-draft`         | 409    | Changing aire, specialties, points, ranking or courts, or deleting, outside draft       |
-  | `invalid-transition`  | 409    | A status change other than one step forward                                             |
-  | `invalid-request`     | 422    | Body too large, not JSON, unknown field, `null`, or a broken rule                       |
-  | `internal`            | 500    | txapela failed                                                                          |
-  | `registration-closed` | 409    | A series or team change that needs draft or registration, from `pools` on               |
-  | `series-full`         | 409    | A team beyond the maximum of its series, or a series maximum below its registered teams |
-  | `tournament-full`     | 409    | A team beyond the maximum teams of the tournament                                       |
-  | `number-taken`        | 409    | Another team of the tournament has this number                                          |
-  | `block-taken`         | 409    | Another series of the tournament has this number block                                  |
-  | `series-has-teams`    | 409    | Deleting a series that has teams, or moving its number block                            |
+  | Type                  | Status | When                                                                                                |
+  | --------------------- | ------ | --------------------------------------------------------------------------------------------------- |
+  | `unauthorized`        | 401    | No organizer token, a malformed or wrong one, or no valid secret                                    |
+  | `not-found`           | 404    | Unknown path under `/api/`, unknown slug, series, team, pool or match, or a draft without the token |
+  | `method-not-allowed`  | 405    | Another method on a known path                                                                      |
+  | `slug-taken`          | 409    | Another tournament has this slug, or another series of the tournament                               |
+  | `not-a-draft`         | 409    | Changing aire, specialties, points, ranking or courts, or deleting, outside draft                   |
+  | `invalid-transition`  | 409    | A status change other than one step forward                                                         |
+  | `invalid-request`     | 422    | Body too large, not JSON, unknown field, `null`, or a broken rule                                   |
+  | `internal`            | 500    | txapela failed                                                                                      |
+  | `registration-closed` | 409    | A series or team change that needs draft or registration, from `pools` on                           |
+  | `series-full`         | 409    | A team beyond the maximum of its series, or a series maximum below its registered teams             |
+  | `tournament-full`     | 409    | A team beyond the maximum teams of the tournament                                                   |
+  | `number-taken`        | 409    | Another team of the tournament has this number                                                      |
+  | `block-taken`         | 409    | Another series of the tournament has this number block                                              |
+  | `series-has-teams`    | 409    | Deleting a series that has teams, or moving its number block                                        |
+  | `not-in-pools`        | 409    | A draw, a move, a tiebreak or a result while the tournament is not `pools`                          |
+  | `series-has-results`  | 409    | A draw or a move once the series has a result, played or forfeit                                    |
 
 - **OpenAPI**: `openapi.json` is the contract, OpenAPI 3.1, generated by utoipa from the `#[utoipa::path]`
   annotations of the handlers. `cargo test` fails when it differs from the code: run `make openapi` and commit it.
@@ -248,8 +324,10 @@ then, the organizer enters every registration.
   an open list too (`response-property-became-not-enum`, ERR): `FROZEN` never changes, and those routes send no other
   type (a tournament `PATCH` refused by its series and teams answers 422). Every type is listed again in
   `ExtensibleProblemType`, an `x-extensible-enum` that clients read as open: the 409 of the series and teams routes
-  (`SeriesAndTeamsConflict`) refers to it, so a new type stays additive there. Their 401, 404 and 422 reuse the
-  closed responses. A new route with a new problem type refers to the extensible list.
+  (`SeriesAndTeamsConflict`) and of the pools, matches and standings routes (`PoolsConflict`) refers to it, so a new
+  type stays additive there. Their 401, 404 and 422 reuse the closed responses. A new route with a new problem type
+  refers to the extensible list. A response value whose list will grow, such as the `phase` and `state` of a match,
+  is an `x-extensible-enum` too, never a closed `enum`.
 - **CORS** (`cors.rs`): one list, the `ALLOWED_ORIGINS` Worker variable (origins separated by commas), drives CORS.
   Production allows `https://kancha.pilotariak.com` only (`[vars]` of `wrangler.toml`, checked by
   `tests/cors.test.mjs`); `make dev` replaces it with `--var` for the Expo dev server, `http://localhost:8081`. Never
@@ -282,15 +360,23 @@ Pilotariak landing pages (design tokens from frontis `DESIGN.md`).
 - **No tournament data in Frontis** ([ADR-0001](docs/adr/0001-keep-tournament-data-out-of-frontis.md)).
 - **One organizer check.** Until the ADR of #5, `auth::organizer` is the only place a write route checks the caller.
   Never log a token or its hash, and keep it failing closed.
-- **Enums, not CHECK.** A value with a fixed list (aire, specialty, status, ranking, team status) is a TEXT column
-  without `CHECK`, parsed by a Rust enum of `domain/`: a new variant is a code change, not a table rebuild.
+- **Enums, not CHECK.** A value with a fixed list (aire, specialty, status, ranking, team status, match phase, match
+  state, forfeit side) is a TEXT column without `CHECK`, parsed by a Rust enum of `domain/`: a new variant is a code
+  change, not a table rebuild.
 - **Guarded writes.** A write that takes a limited place (a registered team), lowers a limit (a maximum), or
   removes or moves what other rows depend on (a specialty, a number block, a series) carries its condition in the
   SQL that writes, and the route reads whether it applied (`db::written`, `db::write`): a check in `domain` followed
   by a separate write lets a concurrent request slip between them. A batch carries the condition in every
   statement (`db::Guard`), so that it applies whole or not at all. When D1 refuses, the route runs the checks of
-  `domain` again on the new state to word the problem (`api::refusal`). The tests of `concurrent …` in
-  `tests/teams.test.mjs` and `tests/series.test.mjs` check the rows left by concurrent requests.
+  `domain` again on the new state to word the problem (`api::refusal`). The writes of the pools guard the status
+  `pools` and, for a draw or a move, a series without result (`db::pools::guard`); a move and a tiebreak also carry
+  `series.pools_revision`, which every draw and move adds one to in the last statement of its batch, so that a move
+  never writes matches computed from pools that changed meanwhile (`db::written_last` reads that statement). A result
+  carries the two teams of its match. Those routes read, check and write up to `api::ATTEMPTS` times: a refused write
+  reads the new state, and answers the problem of a rule it now breaks. Many rows go in one statement as a JSON
+  array read with `json_each(?)`: D1 caps the parameters of a statement. The tests of `concurrent …` in
+  `tests/teams.test.mjs`, `tests/series.test.mjs`, `tests/pools.test.mjs`, `tests/matches.test.mjs` and
+  `tests/standings.test.mjs` check the rows left by concurrent requests.
 - **Frozen problem types.** Never add a type to `FROZEN` in `problem.rs`, nor send a new type from the health and
   tournaments routes: their contract lists a closed `enum`. A new type goes to the end of `ProblemType`, and only
   routes whose error responses refer to `ExtensibleProblemType` send it.
@@ -375,8 +461,13 @@ make lint            # prek run -a: license headers, formatting, YAML/TOML/JSON,
   Check an error with `assertProblem()`. `worker.mjs` declares `ORGANIZER_TOKEN_SHA256` with the hash of a fictional
   token, `ORGANIZER_TOKEN`, computed at run time; `startWorker({ bindings })` replaces a binding, or leaves it out
   when set to `undefined`, and `startWorker({ logs })` pushes every line the Worker logs into the `logs` array.
+  `createTeams()` registers numbered teams of invented players, `drawnTournament()` a tournament in pools with a drawn
+  series, and `recordResult()` records the result of a match.
 - Fixtures are fictional: invented players, clubs, venues and addresses, licence numbers like `LIC-EXEMPLE-…`, and
   contacts on `example.org` (reserved for examples, RFC 2606); never real player names or contact details.
+- A property of a pure function whose inputs are few is checked for every input rather than sampled: the round robin
+  for every pool size from 2 to 100, and the draw for every number of teams from 4 to 100, every size and clubs
+  spread four ways. No property-testing crate is needed.
 - Time-dependent rules are tested by passing instants to `domain`, or by writing past instants in D1 through the
   binding, never by waiting.
 

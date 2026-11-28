@@ -12,10 +12,13 @@
 mod auth;
 pub(crate) mod cors;
 mod health;
+mod matches;
 #[cfg(test)]
 mod openapi;
+mod pools;
 pub(crate) mod problem;
 mod series;
+mod standings;
 mod teams;
 mod tournaments;
 
@@ -26,6 +29,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use worker::{D1Database, Env, Response, RouteContext, Router};
 
+use crate::domain::pool::PoolName;
 use crate::domain::slug::Slug;
 use crate::domain::team::parse_number;
 use cors::Cors;
@@ -42,6 +46,12 @@ macro_rules! v1 {
 
 /// The largest request body: a tournament is a few kilobytes at most.
 const MAX_BODY_BYTES: usize = 16 * 1024;
+
+/// How many times a write of the pools reads the state D1 holds, checks it with the rules of
+/// `domain`, and runs its guarded write. D1 refuses the write when another request changed the
+/// pools in between, such as a move of another team: the next attempt reads the new state, and
+/// answers the problem of a rule it now breaks. After the last refusal, [`refusal`] answers 500.
+const ATTEMPTS: usize = 3;
 
 /// Sends the problem of a failed handler.
 async fn run(handler: impl Future<Output = ApiResult<Response>>) -> worker::Result<Response> {
@@ -100,6 +110,37 @@ pub(crate) fn routes(router: Router<'_, ()>) -> Router<'_, ()> {
         .delete_async(v1!("/tournaments/:slug/teams/:number"), |req, ctx| {
             run(teams::delete(req, ctx))
         })
+        .post_async(v1!("/tournaments/:slug/series/:series/draw"), |req, ctx| {
+            run(pools::draw(req, ctx))
+        })
+        .get_async(
+            v1!("/tournaments/:slug/series/:series/pools"),
+            |req, ctx| run(pools::list(req, ctx)),
+        )
+        .post_async(
+            v1!("/tournaments/:slug/series/:series/pools/:pool/teams"),
+            |req, ctx| run(pools::move_team(req, ctx)),
+        )
+        .put_async(
+            v1!("/tournaments/:slug/series/:series/pools/:pool/tiebreak"),
+            |req, ctx| run(standings::tiebreak(req, ctx)),
+        )
+        .get_async(
+            v1!("/tournaments/:slug/series/:series/matches"),
+            |req, ctx| run(matches::list(req, ctx)),
+        )
+        .get_async(
+            v1!("/tournaments/:slug/series/:series/pools/:pool/matches/:match"),
+            |req, ctx| run(matches::get(req, ctx)),
+        )
+        .put_async(
+            v1!("/tournaments/:slug/series/:series/pools/:pool/matches/:match/result"),
+            |req, ctx| run(matches::record(req, ctx)),
+        )
+        .get_async(
+            v1!("/tournaments/:slug/series/:series/standings"),
+            |req, ctx| run(standings::get(req, ctx)),
+        )
 }
 
 /// What every `/api/*` response needs, after the router: no caching, a problem instead of the
@@ -147,6 +188,22 @@ fn series_param(ctx: &RouteContext<()>) -> ApiResult<Slug> {
 /// team of the tournament has.
 fn number_param(ctx: &RouteContext<()>) -> ApiResult<i64> {
     ctx.param("number")
+        .and_then(|value| parse_number(value))
+        .ok_or_else(|| Problem::new(ProblemType::NotFound))
+}
+
+/// The `:pool` of a path, the name of a pool: 404 when it cannot be one, as for a pool that the
+/// series does not have.
+fn pool_param(ctx: &RouteContext<()>) -> ApiResult<PoolName> {
+    ctx.param("pool")
+        .and_then(|value| PoolName::parse(value))
+        .ok_or_else(|| Problem::new(ProblemType::NotFound))
+}
+
+/// The `:match` of a path, the number of a match within its pool: 404 when it cannot be one, as
+/// for a number that no match of the pool has.
+fn match_param(ctx: &RouteContext<()>) -> ApiResult<i64> {
+    ctx.param("match")
         .and_then(|value| parse_number(value))
         .ok_or_else(|| Problem::new(ProblemType::NotFound))
 }

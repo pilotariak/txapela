@@ -8,8 +8,9 @@
 //! series, unique, immutable, like its series. txapela sets its registration date: the date in
 //! Europe/Paris when the organizer registers it, from the Worker's clock that the route passes
 //! in. The organizer says whether the fee is paid. A team is `registered` or `withdrawn`: a
-//! withdrawn team keeps its number, and no maximum counts it. Withdrawing a team once the pools
-//! are drawn is a forfeit, left to the pools (#8).
+//! withdrawn team keeps its number, and no maximum counts it. Once the tournament is `pools`, its
+//! status no longer changes: a team that withdraws then stays in its pool, and the organizer
+//! records each of its remaining matches as a forfeit.
 
 use core::fmt;
 use core::str::FromStr;
@@ -489,7 +490,7 @@ mod tests {
                 Err(TeamError::RegistrationClosed(RegistrationClosed(
                     Status::Pools
                 ))),
-                "{status:?} is a forfeit past registration (#8)"
+                "{status:?} is fixed past registration: the pools record forfeits"
             );
         }
         assert_eq!(

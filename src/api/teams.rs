@@ -394,8 +394,8 @@ fn changes(value: Value) -> ApiResult<domain::TeamChanges> {
 }
 
 /// Change a team (organizer): its players and fee in every status, its status while the
-/// tournament is a draft or in registration. Withdrawing once the pools are drawn is a forfeit,
-/// left to the pools (#8).
+/// tournament is a draft or in registration. A team that withdraws once the tournament is in
+/// pools stays in its pool: the organizer records its remaining matches as forfeits.
 #[cfg_attr(test, utoipa::path(
     patch,
     path = "/api/v1/tournaments/{slug}/teams/{number}",

@@ -227,6 +227,47 @@ export async function createTeam(call, tournament, changes = {}) {
   return res.json();
 }
 
+// Invented first names for the players of generated teams: fictional teams, never real players.
+const FIRST_NAMES = [
+  "Ane", "Kepa", "Mattin", "Peio", "Amaia", "Beñat", "Eneko", "Garazi",
+  "Iker", "Josu", "Leire", "Maddi", "Oier", "Unai", "Xabi", "Ziortza",
+];
+
+// Registers `count` teams numbered from `first` in a series, each with two fictional players of
+// the club `club(number)` (the fixture club by default; undefined for no club).
+export async function createTeams(call, tournament, { count, first = 101, series = "1re-serie-a", club } = {}) {
+  for (let index = 0; index < count; index += 1) {
+    const number = first + index;
+    const clubOf = club === undefined ? "Club Exemple de Pelote" : club(number);
+    const players = [0, 1].map((player) =>
+      playerBody(FIRST_NAMES[(2 * index + player) % FIRST_NAMES.length], { club: clubOf }),
+    );
+    await createTeam(call, tournament, { number, series, players });
+  }
+}
+
+// A tournament in pools, with the series 1re-serie-a of `teams` registered teams (101, 102…)
+// drawn by `draw` (pools of 4 by default). Returns the pools of the draw.
+export async function drawnTournament(call, slug, { teams = 8, draw = { pool_size: 4 }, club, tournament = {} } = {}) {
+  await createTournament(call, { slug, ...tournament });
+  await createSeries(call, slug, { max_teams: 16 });
+  await createTeams(call, slug, { count: teams, club });
+  await moveTo(call, slug, "pools");
+  const res = await call("POST", `/tournaments/${slug}/series/1re-serie-a/draw`, { token: ORGANIZER_TOKEN, body: draw });
+  assert.equal(res.status, 201, `pools drawn: ${res.status}`);
+  return res.json();
+}
+
+// The path of the pools routes of the series 1re-serie-a of a tournament.
+export function seriesPath(slug, rest = "") {
+  return `/tournaments/${slug}/series/1re-serie-a${rest}`;
+}
+
+// Records the result of a match as the organizer.
+export function recordResult(call, slug, pool, number, body) {
+  return call("PUT", seriesPath(slug, `/pools/${pool}/matches/${number}/result`), { token: ORGANIZER_TOKEN, body });
+}
+
 // Today in Europe/Paris, YYYY-MM-DD: the registration date txapela gives a team.
 export function parisToday() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date());

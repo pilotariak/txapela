@@ -8,10 +8,16 @@
 //! clock and pass it in. This module uses neither `api` nor `db`.
 
 pub(crate) mod civil;
+pub(crate) mod draw;
+pub(crate) mod matches;
 pub(crate) mod player;
+pub(crate) mod pool;
+pub(crate) mod round_robin;
 pub(crate) mod rule;
+pub(crate) mod score;
 pub(crate) mod series;
 pub(crate) mod slug;
+pub(crate) mod standings;
 pub(crate) mod status;
 pub(crate) mod team;
 pub(crate) mod token;

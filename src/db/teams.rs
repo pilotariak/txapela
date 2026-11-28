@@ -21,6 +21,7 @@ use super::{
     Selection, batch, boolean, corrupt, date, int, players, read_date, registration_open,
     statement, text, write, written,
 };
+use crate::domain::draw::Entrant;
 use crate::domain::player::Player;
 use crate::domain::series::BLOCK_SIZE;
 use crate::domain::slug::Slug;
@@ -226,6 +227,47 @@ pub(crate) async fn delete(db: &D1Database, tournament: &Slug, number: i64) -> R
         &values,
     )?)
     .await
+}
+
+#[derive(Deserialize)]
+struct EntrantRow {
+    number: i64,
+    club: Option<String>,
+}
+
+/// The registered teams of a series and the clubs of their players, by number: what a draw
+/// splits into pools. Withdrawn teams stay out of the pools.
+pub(crate) async fn entrants(
+    db: &D1Database,
+    tournament: &Slug,
+    series: &Slug,
+) -> Result<Vec<Entrant>> {
+    let rows = statement(
+        db,
+        "SELECT m.number AS number, p.club AS club FROM teams m \
+         JOIN series s ON s.id = m.series_id JOIN tournaments t ON t.id = m.tournament_id \
+         LEFT JOIN players p ON p.team_id = m.id \
+         WHERE t.slug = ? AND s.slug = ? AND m.status = ? ORDER BY m.number, p.position",
+        &[
+            text(tournament.as_str()),
+            text(series.as_str()),
+            text(TeamStatus::Registered.as_str()),
+        ],
+    )?
+    .all()
+    .await?
+    .results::<EntrantRow>()?;
+    let mut clubs: Vec<(i64, Vec<String>)> = Vec::new();
+    for row in rows {
+        match clubs.last_mut() {
+            Some((number, of_team)) if *number == row.number => of_team.extend(row.club),
+            _ => clubs.push((row.number, row.club.into_iter().collect())),
+        }
+    }
+    Ok(clubs
+        .iter()
+        .map(|(number, of_team)| Entrant::new(*number, of_team.iter().map(String::as_str)))
+        .collect())
 }
 
 #[derive(Deserialize)]

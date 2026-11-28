@@ -536,6 +536,554 @@
         ]
       }
     },
+    "/api/v1/tournaments/{slug}/series/{series}/draw": {
+      "post": {
+        "tags": [
+          "pools"
+        ],
+        "summary": "Draw the pools of a series from its registered teams, in snake order of their seeds and away\nfrom the teams of their club when the draw can, and generate their matches (organizer). The\ntournament is `pools`. A series is drawn again while it has no result: the new draw replaces\nthe pools, their matches and their tiebreak.",
+        "operationId": "drawPools",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Draw"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The pools of the draw",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "/api/v1/tournaments/{slug}/series/{series}/pools"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/PoolsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}/matches": {
+      "get": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "List the matches of the pools of a series, by pool then number. The matches of a draft only\nwith the organizer token.",
+        "operationId": "listMatches",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matches of the series, empty until the draw",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}/pools": {
+      "get": {
+        "tags": [
+          "pools"
+        ],
+        "summary": "List the pools of a series with their teams, by name. The pools of a draft only with the\norganizer token.",
+        "operationId": "listPools",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pools of the series, empty until the draw",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/matches/{match}": {
+      "get": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "A match: 404 when the pool has no match with this number, or when the tournament is a draft\nand the caller has no organizer token.",
+        "operationId": "getMatch",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pool",
+            "in": "path",
+            "description": "Pool name: A, B, C…",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "match",
+            "in": "path",
+            "description": "Match number within the pool",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/matches/{match}/result": {
+      "put": {
+        "tags": [
+          "matches"
+        ],
+        "summary": "Record the result of a match, or record it again to correct it (organizer), while the\ntournament is `pools`. A forfeit records the target score of the series to 0 for the other\nteam. Standings follow at once: they are computed on every read.",
+        "operationId": "recordResult",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pool",
+            "in": "path",
+            "description": "Pool name: A, B, C…",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "match",
+            "in": "path",
+            "description": "Match number within the pool",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchResult"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The match with its result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/PoolsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/teams": {
+      "post": {
+        "tags": [
+          "pools"
+        ],
+        "summary": "Move a team of the series into this pool (organizer), while the tournament is `pools` and\nuntil the first result of the series. The matches of both pools are generated again, and\ntheir tiebreak goes. A move leaves 3 to 7 teams in each pool. A team already in the pool\nstays: nothing changes.",
+        "operationId": "moveTeam",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pool",
+            "in": "path",
+            "description": "Pool name: A, B, C…",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveTeam"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The pools of the series after the move",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoolList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/PoolsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}/pools/{pool}/tiebreak": {
+      "put": {
+        "tags": [
+          "standings"
+        ],
+        "summary": "Order the teams of a pool by hand (organizer), while the tournament is `pools`: the order\nseparates the teams still level on points and goal average, and only them. A draw or a move\nof the pool removes it.",
+        "operationId": "setTiebreak",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pool",
+            "in": "path",
+            "description": "Pool name: A, B, C…",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Tiebreak"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The standings of the pools of the series with the order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandingsList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/PoolsConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Unprocessable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tournaments/{slug}/series/{series}/standings": {
+      "get": {
+        "tags": [
+          "standings"
+        ],
+        "summary": "The standings of each pool of a series, computed from its matches and the points of the\ntournament. The standings of a draft only with the organizer token.",
+        "operationId": "getStandings",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Tournament slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "series",
+            "in": "path",
+            "description": "Series slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The standings of the pools of the series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandingsList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/tournaments/{slug}/teams": {
       "get": {
         "tags": [
@@ -749,7 +1297,7 @@
         "tags": [
           "teams"
         ],
-        "summary": "Change a team (organizer): its players and fee in every status, its status while the\ntournament is a draft or in registration. Withdrawing once the pools are drawn is a forfeit,\nleft to the pools (#8).",
+        "summary": "Change a team (organizer): its players and fee in every status, its status while the\ntournament is a draft or in registration. A team that withdraws once the tournament is in\npools stays in its pool: the organizer records its remaining matches as forfeits.",
         "operationId": "updateTeam",
         "parameters": [
           {
@@ -1061,9 +1609,43 @@
         },
         "additionalProperties": false
       },
+      "Draw": {
+        "type": "object",
+        "description": "`POST /tournaments/:slug/series/:series/draw`.",
+        "properties": {
+          "pool_size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The largest pool: 4, 5 or 6 teams, in as few pools as it allows. Give `pool_size` or\n`pools`, not both.",
+            "example": 4,
+            "maximum": 6,
+            "minimum": 4
+          },
+          "pools": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of pools. Every pool holds 4 to 6 teams, and pools differ by one team at most.",
+            "maximum": 26,
+            "minimum": 1
+          },
+          "seeds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The team numbers of the first seeds, in order: the other registered teams follow by\nnumber.",
+            "example": [
+              105,
+              101
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "ExtensibleProblemDocument": {
         "type": "object",
-        "description": "The body of an error response whose `type` list grows: the series and teams routes.",
+        "description": "The body of an error response whose `type` list grows: the series, teams, pools,\nmatches and standings routes.",
         "required": [
           "type",
           "title",
@@ -1106,7 +1688,9 @@
           "https://txapela.pilotariak.com/problems/tournament-full",
           "https://txapela.pilotariak.com/problems/number-taken",
           "https://txapela.pilotariak.com/problems/block-taken",
-          "https://txapela.pilotariak.com/problems/series-has-teams"
+          "https://txapela.pilotariak.com/problems/series-has-teams",
+          "https://txapela.pilotariak.com/problems/not-in-pools",
+          "https://txapela.pilotariak.com/problems/series-has-results"
         ]
       },
       "Health": {
@@ -1121,6 +1705,169 @@
             "example": "ok"
           }
         }
+      },
+      "Match": {
+        "type": "object",
+        "description": "A match of a pool.",
+        "required": [
+          "phase",
+          "pool",
+          "number",
+          "round",
+          "teams",
+          "state"
+        ],
+        "properties": {
+          "forfeited_by": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of the team that forfeited."
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The public key within the pool, from 1, in the order of the rounds.",
+            "example": 1,
+            "minimum": 1
+          },
+          "phase": {
+            "$ref": "#/components/schemas/MatchPhase",
+            "description": "`pool` for the matches of the pools."
+          },
+          "pool": {
+            "type": "string",
+            "description": "Its pool: A, B, C…",
+            "example": "A",
+            "pattern": "^[A-Z]$"
+          },
+          "round": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The round of the round robin, from 1. In a pool with an odd number of teams, one team\nrests each round.",
+            "example": 1,
+            "minimum": 1
+          },
+          "score": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Once played or forfeit: the scores of `teams`, in their order. A forfeit gives the target\nscore of the series to the other team and 0 to the team that forfeited.",
+            "example": [
+              40,
+              31
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "state": {
+            "$ref": "#/components/schemas/MatchState"
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamSummary"
+            },
+            "description": "The two teams, the better seed first.",
+            "maxItems": 2,
+            "minItems": 2
+          }
+        }
+      },
+      "MatchList": {
+        "type": "object",
+        "description": "`GET /tournaments/:slug/series/:series/matches`.",
+        "required": [
+          "matches"
+        ],
+        "properties": {
+          "matches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Match"
+            },
+            "description": "By pool, then number. Empty until the draw."
+          }
+        }
+      },
+      "MatchPhase": {
+        "type": "string",
+        "description": "The part of the tournament a match belongs to. The list grows: a client shows the values it knows and falls back on the raw value for the others.",
+        "x-extensible-enum": [
+          "pool"
+        ]
+      },
+      "MatchResult": {
+        "type": "object",
+        "description": "`PUT /tournaments/:slug/series/:series/pools/:pool/matches/:match/result`: the two teams of\nthe match, and either their score or the team that forfeits.",
+        "required": [
+          "teams"
+        ],
+        "properties": {
+          "forfeited_by": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of the team that forfeits: the other team gets the target score, and it gets\n0, which counts in the goal average."
+          },
+          "score": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The scores of `teams`, in their order: one team reaches exactly the target score of the\nseries, and the other stays below it. Give `score` or `forfeited_by`, not both.",
+            "example": [
+              40,
+              31
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The numbers of the two teams of the match, in either order: the score follows this order.\nA result never lands on another pair.",
+            "example": [
+              101,
+              104
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
+        "additionalProperties": false
+      },
+      "MatchState": {
+        "type": "string",
+        "description": "Where a match stands: scheduled, played, forfeit or postponed. The list grows: a client shows the values it knows and falls back on the raw value for the others.",
+        "x-extensible-enum": [
+          "scheduled",
+          "played",
+          "forfeit",
+          "postponed"
+        ]
+      },
+      "MoveTeam": {
+        "type": "object",
+        "description": "`POST /tournaments/:slug/series/:series/pools/:pool/teams`.",
+        "required": [
+          "number"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of a team in another pool of the series.",
+            "example": 103,
+            "maximum": 9999,
+            "minimum": 100
+          }
+        },
+        "additionalProperties": false
       },
       "Player": {
         "type": "object",
@@ -1206,6 +1953,101 @@
         },
         "additionalProperties": false
       },
+      "Pool": {
+        "type": "object",
+        "description": "A pool of a series.",
+        "required": [
+          "name",
+          "teams"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The public key within the series: A, B, C… Pool A is Frontis's `pool` 1.",
+            "example": "A",
+            "pattern": "^[A-Z]$"
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoolTeam"
+            },
+            "description": "In seed order."
+          }
+        }
+      },
+      "PoolList": {
+        "type": "object",
+        "description": "`GET /tournaments/:slug/series/:series/pools`.",
+        "required": [
+          "pools"
+        ],
+        "properties": {
+          "pools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pool"
+            },
+            "description": "By name. Empty until the draw."
+          }
+        }
+      },
+      "PoolStandings": {
+        "type": "object",
+        "description": "The standings of a pool.",
+        "required": [
+          "pool",
+          "standings"
+        ],
+        "properties": {
+          "pool": {
+            "type": "string",
+            "example": "A",
+            "pattern": "^[A-Z]$"
+          },
+          "standings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Standing"
+            },
+            "description": "By rank, then team number among teams that share a rank."
+          }
+        }
+      },
+      "PoolTeam": {
+        "type": "object",
+        "description": "A team of a pool.",
+        "required": [
+          "seed",
+          "number",
+          "players"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "example": 101,
+            "maximum": 9999,
+            "minimum": 100
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicPlayer"
+            },
+            "description": "In the organizer's order.",
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "seed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Its place in the seed order of the draw, from 1. It keeps it when it moves.",
+            "example": 1,
+            "minimum": 1
+          }
+        }
+      },
       "ProblemDocument": {
         "type": "object",
         "description": "The body of an error response.",
@@ -1247,6 +2089,28 @@
           "https://txapela.pilotariak.com/problems/invalid-request",
           "https://txapela.pilotariak.com/problems/internal"
         ]
+      },
+      "PublicPlayer": {
+        "type": "object",
+        "description": "A player as everyone sees it: no licence and no contact, whoever calls.",
+        "required": [
+          "first_name",
+          "last_name"
+        ],
+        "properties": {
+          "club": {
+            "type": "string",
+            "example": "Club Exemple de Pelote"
+          },
+          "first_name": {
+            "type": "string",
+            "example": "Ane"
+          },
+          "last_name": {
+            "type": "string",
+            "example": "Exemple"
+          }
+        }
       },
       "Ranking": {
         "type": "string",
@@ -1392,6 +2256,93 @@
         },
         "additionalProperties": false
       },
+      "Standing": {
+        "type": "object",
+        "description": "The line of a team in the standings of its pool.",
+        "required": [
+          "rank",
+          "team",
+          "played",
+          "wins",
+          "losses",
+          "forfeits",
+          "points",
+          "goals_for",
+          "goals_against",
+          "goal_average"
+        ],
+        "properties": {
+          "forfeits": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The matches the team forfeited: each gives it the forfeit points of the tournament.",
+            "minimum": 0
+          },
+          "goal_average": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Goals for minus goals against."
+          },
+          "goals_against": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "goals_for": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "losses": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Forfeits included.",
+            "minimum": 0
+          },
+          "played": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Matches with a result, played or forfeit.",
+            "minimum": 0
+          },
+          "points": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "rank": {
+            "type": "integer",
+            "format": "int64",
+            "description": "From 1, by points then goal average. Teams still level share it, unless the organizer's\ntiebreak separates them.",
+            "example": 1,
+            "minimum": 1
+          },
+          "team": {
+            "$ref": "#/components/schemas/TeamSummary"
+          },
+          "wins": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "StandingsList": {
+        "type": "object",
+        "description": "`GET /tournaments/:slug/series/:series/standings`.",
+        "required": [
+          "pools"
+        ],
+        "properties": {
+          "pools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoolStandings"
+            },
+            "description": "By pool. Empty until the draw."
+          }
+        }
+      },
       "Status": {
         "type": "string",
         "description": "`tournaments.status`. A new tournament is a draft.",
@@ -1496,6 +2447,56 @@
           "registered",
           "withdrawn"
         ]
+      },
+      "TeamSummary": {
+        "type": "object",
+        "description": "A team as the pools, matches and standings show it, to every caller: its number and the\nnames and clubs of its players.",
+        "required": [
+          "number",
+          "players"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "format": "int64",
+            "example": 101,
+            "maximum": 9999,
+            "minimum": 100
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicPlayer"
+            },
+            "description": "In the organizer's order.",
+            "maxItems": 2,
+            "minItems": 2
+          }
+        }
+      },
+      "Tiebreak": {
+        "type": "object",
+        "description": "`PUT /tournaments/:slug/series/:series/pools/:pool/tiebreak`.",
+        "required": [
+          "teams"
+        ],
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Every team number of the pool once, in the organizer's order, or none to remove the\norder. It separates only the teams level on points and goal average.",
+            "example": [
+              104,
+              101,
+              103,
+              102
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "Tournament": {
         "type": "object",
@@ -1736,6 +2737,16 @@
           }
         }
       },
+      "PoolsConflict": {
+        "description": "A draw, a move, a tiebreak or a result that the tournament or the series forbid: the\ntournament is not in its pools, or the series has results.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ExtensibleProblemDocument"
+            }
+          }
+        }
+      },
       "SeriesAndTeamsConflict": {
         "description": "A series or team that conflicts with its tournament, its series or the other series and\nteams: registration closed, a slug, number block or team number taken, a full series or\ntournament, or a series that still has teams.",
         "content": {
@@ -1799,6 +2810,18 @@
     {
       "name": "teams",
       "description": "The teams that the organizer registers, two players each"
+    },
+    {
+      "name": "pools",
+      "description": "The pools of a series: drawn in snake order of the seeds, 4 to 6 teams each, named A, B, C…"
+    },
+    {
+      "name": "matches",
+      "description": "The round robin of each pool, and the results the organizer records"
+    },
+    {
+      "name": "standings",
+      "description": "The standings of each pool, computed from its matches on every read"
     }
   ]
 }

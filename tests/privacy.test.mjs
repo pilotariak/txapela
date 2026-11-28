@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The personal data of players: licence numbers and contacts are for the organizer only. They
-// appear in no public response, no problem detail and no log line of the Worker. The values
-// below are fictional and distinctive, so that a leak is found by its text.
+// appear in no public response, no problem detail and no log line of the Worker. The pools,
+// matches and standings show the public view of a team to every caller, the organizer included.
+// The values below are fictional and distinctive, so that a leak is found by its text.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,6 +34,8 @@ const ORGANIZER_ONLY = /"(licence|contact|registered_on|fee_paid)"/;
 
 const OPEN = "privacy-open";
 const DRAFT = "privacy-draft";
+// In pools, drawn, with a result: every route of the pools, matches and standings has data.
+const POOLS = "privacy-pools";
 
 const logs = [];
 let mf;
@@ -70,11 +73,42 @@ async function seed(slug) {
   }
 }
 
+// A tournament in pools: four teams whose players carry secrets, drawn in one pool, and the
+// result of its first match.
+async function seedPools(slug) {
+  await createTournament(call, { slug });
+  await createSeries(call, slug);
+  for (const [number, players] of [
+    [101, ["Ane", "Kepa"]],
+    [102, ["Mattin", "Peio"]],
+    [103, ["Ane", "Peio"]],
+    [104, ["Kepa", "Mattin"]],
+  ]) {
+    const res = await call("POST", `/tournaments/${slug}/teams`, {
+      ...asOrganizer,
+      body: teamBody({ number, players: players.map(secretPlayer) }),
+    });
+    assert.equal(res.status, 201, `team ${number} registered`);
+    await res.body?.cancel();
+  }
+  await moveTo(call, slug, "pools");
+  const drawn = await call("POST", `/tournaments/${slug}/series/1re-serie-a/draw`, { ...asOrganizer, body: { pools: 1 } });
+  assert.equal(drawn.status, 201, "pools drawn");
+  await drawn.body?.cancel();
+  const result = await call("PUT", `/tournaments/${slug}/series/1re-serie-a/pools/A/matches/1/result`, {
+    ...asOrganizer,
+    body: { teams: [101, 104], score: [40, 33] },
+  });
+  assert.equal(result.status, 200, "a result recorded");
+  await result.body?.cancel();
+}
+
 before(async () => {
   ({ mf, db, call } = await startApi({ logs }));
   await seed(OPEN);
   await moveTo(call, OPEN, "registration");
   await seed(DRAFT);
+  await seedPools(POOLS);
 });
 
 after(async () => {
@@ -87,18 +121,23 @@ function assertNoSecret(text, where) {
   }
 }
 
-// Every GET path of the contract, with its parameters filled in for `slug`.
+// Every GET path of the contract, with its parameters filled in for `slug`. A new path parameter
+// needs a value here: left as `{name}`, its route would answer 404 and check nothing.
 function publicPaths(slug) {
   const contract = JSON.parse(readFileSync("openapi.json", "utf8"));
   return Object.entries(contract.paths)
     .filter(([, operations]) => operations.get !== undefined)
-    .map(([path]) =>
-      path
+    .map(([path]) => {
+      const filled = path
         .replace("/api/v1", "")
         .replace("{slug}", slug)
         .replace("{series}", "1re-serie-a")
-        .replace("{number}", "101"),
-    );
+        .replace("{number}", "101")
+        .replace("{pool}", "A")
+        .replace("{match}", "1");
+      assert.doesNotMatch(filled, /[{}]/, `${path}: every path parameter has a value`);
+      return filled;
+    });
 }
 
 test("the organizer reads the licences and contacts", async () => {
@@ -117,6 +156,18 @@ test("no public route returns a licence, a contact, a registration date or a fee
     assert.ok([200, 404].includes(res.status), `GET ${path}: ${res.status}`);
     assertNoSecret(text, `GET ${path}`);
     assert.doesNotMatch(text, ORGANIZER_ONLY, `GET ${path} holds no organizer-only field`);
+  }
+  const pools = publicPaths(POOLS).filter((path) => /\/(pools|matches|standings)/.test(path));
+  assert.ok(pools.includes(`/tournaments/${POOLS}/series/1re-serie-a/pools/A/matches/1`), "the contract lists the match route");
+  for (const options of [{}, asOrganizer]) {
+    for (const path of pools) {
+      const res = await call("GET", path, options);
+      const text = await res.text();
+      assert.equal(res.status, 200, `GET ${path}: the pools of the series are drawn`);
+      assert.match(text, /"first_name":"Ane"/, `GET ${path} shows the names of the players`);
+      assertNoSecret(text, `GET ${path}${options.token ? " as the organizer" : ""}`);
+      assert.doesNotMatch(text, ORGANIZER_ONLY, `GET ${path} holds no organizer-only field, whoever calls`);
+    }
   }
   const teams = await (await call("GET", `/tournaments/${OPEN}/teams`)).json();
   assert.deepEqual(
@@ -184,6 +235,26 @@ test("no problem detail quotes a licence or a contact", async () => {
       () => call("PATCH", `${path}/101`, { body: { players: ["Ane", "Kepa"].map(secretPlayer) } }),
       401,
       "unauthorized",
+    ],
+    [
+      "a contact sent as a team of a result",
+      () =>
+        call("PUT", `/tournaments/${POOLS}/series/1re-serie-a/pools/A/matches/1/result`, {
+          ...asOrganizer,
+          body: { teams: [SECRETS.ane.contact, 104], score: [40, 33] },
+        }),
+      422,
+      "invalid-request",
+    ],
+    [
+      "a field named after a contact in a move",
+      () =>
+        call("POST", `/tournaments/${POOLS}/series/1re-serie-a/pools/A/teams`, {
+          ...asOrganizer,
+          body: { number: 101, [SECRETS.mattin.contact]: 1 },
+        }),
+      422,
+      "invalid-request",
     ],
   ];
   for (const [what, send, status, type, extra] of problems) {

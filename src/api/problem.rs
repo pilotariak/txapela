@@ -17,6 +17,7 @@
 use serde::Serialize;
 use worker::{Error, Response, console_error};
 
+use crate::domain::pool::PoolError;
 use crate::domain::series::SeriesError;
 use crate::domain::team::TeamError;
 use crate::domain::tournament::ChangeError;
@@ -93,6 +94,11 @@ problem_types! {
     BlockTaken = ("https://txapela.pilotariak.com/problems/block-taken", 409, "This number block is taken"),
     /// The series has teams: it cannot be deleted, and its number block cannot move.
     SeriesHasTeams = ("https://txapela.pilotariak.com/problems/series-has-teams", 409, "The series has teams"),
+    /// The tournament is not in its pools: pools are drawn, changed and played while it is
+    /// `pools` only.
+    NotInPools = ("https://txapela.pilotariak.com/problems/not-in-pools", 409, "The tournament is not in its pools"),
+    /// The series has a result: its pools are no longer drawn again, and no team moves.
+    SeriesHasResults = ("https://txapela.pilotariak.com/problems/series-has-results", 409, "The series has results"),
 }
 
 /// The problem types of the health and tournaments routes, the closed `enum` of the
@@ -253,6 +259,17 @@ impl From<TeamError> for Problem {
     }
 }
 
+impl From<PoolError> for Problem {
+    fn from(error: PoolError) -> Self {
+        let kind = match &error {
+            PoolError::NotInPools(_) => ProblemType::NotInPools,
+            PoolError::Invalid(_) => ProblemType::InvalidRequest,
+            PoolError::HasResults { .. } => ProblemType::SeriesHasResults,
+        };
+        Self::detail(kind, error.to_string())
+    }
+}
+
 /// Logs what failed without request data: a D1 message names a table or a constraint, never a
 /// bound value. Other errors are logged by kind only, since a deserialization message can quote
 /// a stored value.
@@ -313,7 +330,8 @@ pub(crate) mod responses {
     #[response(content_type = "application/problem+json")]
     pub(crate) struct Unprocessable(ProblemDocument);
 
-    /// The body of an error response whose `type` list grows: the series and teams routes.
+    /// The body of an error response whose `type` list grows: the series, teams, pools,
+    /// matches and standings routes.
     #[derive(Serialize, utoipa::ToSchema)]
     pub(crate) struct ExtensibleProblemDocument {
         #[serde(rename = "type")]
@@ -330,15 +348,22 @@ pub(crate) mod responses {
     #[derive(utoipa::ToResponse)]
     #[response(content_type = "application/problem+json")]
     pub(crate) struct SeriesAndTeamsConflict(ExtensibleProblemDocument);
+
+    /// A draw, a move, a tiebreak or a result that the tournament or the series forbid: the
+    /// tournament is not in its pools, or the series has results.
+    #[derive(utoipa::ToResponse)]
+    #[response(content_type = "application/problem+json")]
+    pub(crate) struct PoolsConflict(ExtensibleProblemDocument);
 }
 
 #[cfg(test)]
 mod tests {
     use super::{FROZEN, Problem, ProblemType};
+    use crate::domain::pool::PoolError;
     use crate::domain::rule::Invalid;
     use crate::domain::series::SeriesError;
     use crate::domain::slug::Slug;
-    use crate::domain::status::{InvalidTransition, RegistrationClosed, Status};
+    use crate::domain::status::{InvalidTransition, NotInPools, RegistrationClosed, Status};
     use crate::domain::team::TeamError;
     use crate::domain::tournament::ChangeError;
 
@@ -378,6 +403,12 @@ mod tests {
             (ProblemType::NumberTaken, 409, "This team number is taken"),
             (ProblemType::BlockTaken, 409, "This number block is taken"),
             (ProblemType::SeriesHasTeams, 409, "The series has teams"),
+            (
+                ProblemType::NotInPools,
+                409,
+                "The tournament is not in its pools",
+            ),
+            (ProblemType::SeriesHasResults, 409, "The series has results"),
         ] {
             assert_eq!(kind.status(), status, "{kind:?} answers {status}");
             assert_eq!(kind.title(), title, "{kind:?} is titled {title:?}");
@@ -488,6 +519,36 @@ mod tests {
         for (problem, kind) in problems {
             assert_eq!(problem.kind, kind, "{:?} answers {kind:?}", problem.detail);
             assert!(problem.detail.is_some(), "{kind:?} names the rule");
+        }
+    }
+
+    #[test]
+    fn pool_errors_map_to_their_problem_outside_the_closed_list() {
+        for (error, kind) in [
+            (
+                PoolError::NotInPools(NotInPools(Status::Registration)),
+                ProblemType::NotInPools,
+            ),
+            (PoolError::Invalid(invalid()), ProblemType::InvalidRequest),
+            (
+                PoolError::HasResults { results: 2 },
+                ProblemType::SeriesHasResults,
+            ),
+        ] {
+            let detail = error.to_string();
+            let problem = Problem::from(error);
+            assert_eq!(problem.kind, kind, "{detail} answers {kind:?}");
+            assert_eq!(
+                problem.detail.as_deref(),
+                Some(detail.as_str()),
+                "the detail names the rule"
+            );
+        }
+        for kind in [ProblemType::NotInPools, ProblemType::SeriesHasResults] {
+            assert!(
+                !FROZEN.contains(&kind),
+                "{kind:?} is new: only routes whose errors refer to the open list send it"
+            );
         }
     }
 }
