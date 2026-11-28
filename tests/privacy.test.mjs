@@ -32,6 +32,12 @@ const SECRET_VALUES = Object.values(SECRETS).flatMap(({ licence, contact }) => [
 // The fields that only the organizer reads.
 const ORGANIZER_ONLY = /"(licence|contact|registered_on|fee_paid)"/;
 
+// The route of the contract, GET /api/v1/openapi.json. The contract describes the organizer view
+// too, so it names the organizer-only fields as schema properties, by design: it is the only
+// route that skips the check of their names. It holds no data, and the check of the values below
+// still reads it.
+const CONTRACT = "/openapi.json";
+
 const OPEN = "privacy-open";
 const DRAFT = "privacy-draft";
 // In pools, drawn, with a result: every route of the pools, matches and standings has data.
@@ -150,12 +156,15 @@ test("the organizer reads the licences and contacts", async () => {
 test("no public route returns a licence, a contact, a registration date or a fee", async () => {
   const paths = [...publicPaths(OPEN), ...publicPaths(DRAFT), `/tournaments/${OPEN}/teams/201`];
   assert.ok(paths.includes(`/tournaments/${OPEN}/teams`), "the contract lists the team routes");
+  assert.ok(paths.includes(CONTRACT), "the contract lists its own route, whose values are checked");
   for (const path of paths) {
     const res = await call("GET", path);
     const text = await res.text();
     assert.ok([200, 404].includes(res.status), `GET ${path}: ${res.status}`);
     assertNoSecret(text, `GET ${path}`);
-    assert.doesNotMatch(text, ORGANIZER_ONLY, `GET ${path} holds no organizer-only field`);
+    if (path !== CONTRACT) {
+      assert.doesNotMatch(text, ORGANIZER_ONLY, `GET ${path} holds no organizer-only field`);
+    }
   }
   const pools = publicPaths(POOLS).filter((path) => /\/(pools|matches|standings)/.test(path));
   assert.ok(pools.includes(`/tournaments/${POOLS}/series/1re-serie-a/pools/A/matches/1`), "the contract lists the match route");

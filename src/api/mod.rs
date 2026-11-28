@@ -5,11 +5,13 @@
 //!
 //! Each resource module holds its handlers, its request and response types and their
 //! `#[utoipa::path]` annotations, which `openapi.rs` (compiled for tests only) gathers into
-//! `openapi.json`. A handler returns an [`ApiResult`]: its `Err` is a problem (`problem.rs`), sent
-//! as `application/problem+json`. Handlers read D1 through `db` and apply the rules of `domain`;
-//! a rule that needs the time gets it from the Worker's clock, passed in.
+//! `openapi.json`; `contract.rs` serves that file as committed. A handler returns an
+//! [`ApiResult`]: its `Err` is a problem (`problem.rs`), sent as `application/problem+json`.
+//! Handlers read D1 through `db` and apply the rules of `domain`; a rule that needs the time gets
+//! it from the Worker's clock, passed in.
 
 mod auth;
+mod contract;
 pub(crate) mod cors;
 mod health;
 mod matches;
@@ -65,6 +67,7 @@ async fn run(handler: impl Future<Output = ApiResult<Response>>) -> worker::Resu
 pub(crate) fn routes(router: Router<'_, ()>) -> Router<'_, ()> {
     router
         .get(v1!("/health"), |_, _| health::get())
+        .get(v1!("/openapi.json"), |_, _| contract::get())
         .get_async(v1!("/tournaments"), |req, ctx| {
             run(tournaments::list(req, ctx))
         })

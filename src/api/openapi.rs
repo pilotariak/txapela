@@ -5,10 +5,12 @@
 //! txapela and its clients, which generate their types from it.
 //!
 //! utoipa builds it from the `#[utoipa::path]` annotations of the handlers and the `ToSchema`
-//! derives of their types. txapela does not serve the document, so all of it exists under
-//! `cfg(test)` only, with utoipa as a dev-dependency: the Worker's wasm carries no schema code.
-//! The annotations are not tied to the router, so [`tests::openapi_json_is_up_to_date`] fails
-//! when the generated document differs from the committed file. Regenerate it with
+//! derives of their types. txapela serves the committed file unchanged at
+//! `GET /api/v1/openapi.json` (`contract.rs` embeds it with `include_str!`), never a document
+//! generated at runtime, so all of this exists under `cfg(test)` only, with utoipa as a
+//! dev-dependency: the Worker's wasm carries the JSON text but no schema code. The annotations
+//! are not tied to the router, so [`tests::openapi_json_is_up_to_date`] fails when the generated
+//! document differs from the committed file, the one the Worker serves. Regenerate it with
 //! `make openapi`.
 
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
@@ -38,6 +40,7 @@ use super::problem::{ExtensibleProblemType, ProblemDocument, ProblemType};
     servers((url = "https://txapela.pilotariak.com")),
     paths(
         super::health::get,
+        super::contract::get,
         super::tournaments::list,
         super::tournaments::create,
         super::tournaments::get,
@@ -81,6 +84,7 @@ use super::problem::{ExtensibleProblemType, ProblemDocument, ProblemType};
     modifiers(&SecuritySchemes),
     tags(
         (name = "health", description = "Liveness"),
+        (name = "contract", description = "This OpenAPI document, served as committed"),
         (name = "tournaments", description = "Create, read, change and delete tournaments"),
         (name = "series", description = "The series of a tournament: one specialty at one level, \
             with a block of team numbers"),
@@ -164,9 +168,28 @@ mod tests {
             .map(|path| path.as_object().expect("should be an object").len())
             .sum();
         assert_eq!(
-            operations, 24,
-            "the health route, the 5 routes of each of tournaments, series and teams, 3 of \
-             pools, 3 of matches and 2 of standings"
+            operations, 25,
+            "the health route, the contract route, the 5 routes of each of tournaments, series \
+             and teams, 3 of pools, 3 of matches and 2 of standings"
+        );
+    }
+
+    #[test]
+    fn health_and_the_contract_need_no_token() {
+        let document: serde_json::Value =
+            serde_json::from_str(&document()).expect("should be JSON");
+        for path in ["/api/v1/health", "/api/v1/openapi.json"] {
+            assert_eq!(
+                document["paths"][path]["get"]["security"],
+                serde_json::json!([{}]),
+                "GET {path} is public and takes no token"
+            );
+        }
+        let answer = &document["paths"]["/api/v1/openapi.json"]["get"]["responses"]["200"];
+        assert_eq!(
+            answer["content"]["application/json"]["schema"],
+            serde_json::json!({ "type": "object" }),
+            "the contract is a free-form JSON object: this document does not describe itself"
         );
     }
 
