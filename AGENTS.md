@@ -431,10 +431,9 @@ services. When a port is taken, `make dev` stops instead of moving to another on
 
 - Binding `DB`, database `pilotariak-txapela` (named like the other Pilotariak databases, `pilotariak-<name>`),
   migrations in `database/migrations/`. Commands call the database by its name.
-- **The remote database does not exist yet.** `database_id` in `wrangler.toml` is a placeholder,
-  `00000000-0000-0000-0000-000000000000`, which local development accepts. Before the first deploy, the maintainer
-  runs `bunx wrangler d1 create pilotariak-txapela`, then pastes the `database_id` it prints into `wrangler.toml`.
-  `make migrate-remote`, `make db-remote` and `make deploy` need the real id.
+- The database is restricted to the EU jurisdiction, like pik's: the licence numbers and contacts of players are
+  stored and processed in the EU. The jurisdiction is set at creation and never changes. It was created once with
+  `bunx wrangler d1 create pilotariak-txapela --jurisdiction eu`, and its id is the `database_id` of `wrangler.toml`.
 - `wrangler dev`, the local migrations and the local queries share one local state, `.wrangler/state/`. The local
   database has no tables until a migration creates them.
 - `make migrate-local`, `make migrate-remote`, `make migrate-list`, `make db-local SQL="..."` and
@@ -488,12 +487,11 @@ CI runs all of this on every pull request:
 make deploy          # make migrate-remote, then bun run deploy (wrangler deploy)
 ```
 
-Only the maintainer deploys, once the D1 database exists (see Database), and sets the organizer secret, which no
-file holds: `bunx wrangler secret put ORGANIZER_TOKEN_SHA256`, then the lowercase SHA-256 of the organizer token.
-Until it is set, every organizer call answers 401. `wrangler deploy` attaches the Custom Domain
-`txapela.pilotariak.com` declared in `routes`, then `https://txapela.pilotariak.com/api/v1/health` answers. On the
-pilotariak.com zone, it creates the DNS record and the certificate. A Custom Domain takes a bare hostname, without a
-path or a wildcard.
+Only the maintainer deploys, and sets the organizer secret, which no file holds:
+`bunx wrangler secret put ORGANIZER_TOKEN_SHA256`, then the lowercase SHA-256 of the organizer token. Until it is set,
+every organizer call answers 401. `wrangler deploy` attaches the Custom Domain `txapela.pilotariak.com` declared in
+`routes`, then `https://txapela.pilotariak.com/api/v1/health` answers. On the pilotariak.com zone, it creates the DNS
+record and the certificate. A Custom Domain takes a bare hostname, without a path or a wildcard.
 
 ## Key Conventions
 

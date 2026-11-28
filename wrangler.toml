@@ -22,7 +22,7 @@ custom_domain = true
 [[d1_databases]]
 binding = "DB"
 database_name = "pilotariak-txapela"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "eac51396-213d-4920-9471-adc38c504fdd"
 migrations_dir = "database/migrations"
 
 [observability.logs]
