@@ -105,10 +105,10 @@ Run `make help` for the full list of targets.
 
 ## Deployment
 
-The D1 database does not exist yet: `database_id` in `wrangler.toml` is a placeholder. Before the first deploy, the
-maintainer runs `bunx wrangler d1 create pilotariak-txapela`, pastes the `database_id` it prints into `wrangler.toml`,
-sets the organizer secret with `bunx wrangler secret put ORGANIZER_TOKEN_SHA256`, then runs `make deploy`, which applies
-the migrations and deploys the Worker to `https://txapela.pilotariak.com`.
+The D1 database `pilotariak-txapela` lives in the EU jurisdiction, and its id is the `database_id` of `wrangler.toml`.
+Before the first deploy, the maintainer sets the organizer secret with
+`bunx wrangler secret put ORGANIZER_TOKEN_SHA256`, then runs `make deploy`, which applies the migrations and deploys
+the Worker to `https://txapela.pilotariak.com`.
 
 ## Contributing
 
